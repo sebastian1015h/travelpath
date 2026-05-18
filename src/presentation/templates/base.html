@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}TravelPath{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% block navbar %}{% endblock %}
+  {% block content %}{% endblock %}
+
+  <!-- Modal de confirmación global -->
+  <div class="modal-overlay" id="globalModal">
+    <div class="modal-box">
+      <div class="modal-icon" id="modalIcon">🗑️</div>
+      <div class="modal-title" id="modalTitle">¿Eliminar itinerario?</div>
+      <div class="modal-body"  id="modalBody">Esta acción no se puede deshacer.</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modalCancel">Cancelar</button>
+        <button class="btn btn-danger" id="modalConfirm">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';
+
+    function getToken() { return localStorage.getItem('access_token'); }
+
+    function setToken(token, refresh) {
+      localStorage.setItem('access_token', token);
+      if (refresh) localStorage.setItem('refresh_token', refresh);
+    }
+
+    function clearAuth() {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('usuario');
+    }
+
+    function requireAuth() {
+      if (!getToken()) window.location.href = '/login';
+    }
+
+    async function apiFetch(url, options = {}) {
+      const token = getToken();
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(API_BASE + url, { ...options, headers });
+      if (res.status === 401) { clearAuth(); window.location.href = '/login'; }
+      return res;
+    }
+
+    // ── Modal global ──────────────────────────────────────────────────────
+    const _modal = document.getElementById('globalModal');
+
+    function showModal({ title, body, confirmText = 'Eliminar', icon = '🗑️', onConfirm }) {
+      document.getElementById('modalTitle').textContent   = title;
+      document.getElementById('modalBody').textContent    = body;
+      document.getElementById('modalConfirm').textContent = confirmText;
+      document.getElementById('modalIcon').textContent    = icon;
+      _modal.classList.add('visible');
+
+      const close = () => _modal.classList.remove('visible');
+
+      document.getElementById('modalCancel').onclick  = close;
+      _modal.addEventListener('click', e => { if (e.target === _modal) close(); }, { once: true });
+
+      document.getElementById('modalConfirm').onclick = () => {
+        close();
+        if (onConfirm) onConfirm();
+      };
+    }
+  </script>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

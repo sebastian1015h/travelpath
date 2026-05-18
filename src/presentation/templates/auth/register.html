@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block title %}Registro — TravelPath{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-card card fade-in">
+    <div class="auth-logo">
+      <h1>Travel<span>Path</span></h1>
+      <p>Crea tu cuenta gratuita</p>
+    </div>
+
+    <div id="alert" class="alert alert-error"></div>
+
+    <form id="registerForm" novalidate>
+      <div class="form-group">
+        <label for="nombre">Nombre completo</label>
+        <input type="text" id="nombre" placeholder="Sebastián Carvajal" autocomplete="name" required />
+        <span class="error-msg" id="nombre-err">El nombre es requerido.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="correo">Correo electrónico</label>
+        <input type="email" id="correo" placeholder="tu@correo.com" autocomplete="email" required />
+        <span class="error-msg" id="correo-err">Ingresa un correo válido.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="contrasena">Contraseña</label>
+        <input type="password" id="contrasena" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required />
+        <span class="error-msg" id="contrasena-err">La contraseña debe tener al menos 8 caracteres.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="confirmar">Confirmar contraseña</label>
+        <input type="password" id="confirmar" placeholder="Repite la contraseña" autocomplete="new-password" required />
+        <span class="error-msg" id="confirmar-err">Las contraseñas no coinciden.</span>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;" id="submitBtn">
+        Crear Cuenta
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      ¿Ya tienes cuenta? <a href="/login">Inicia sesión</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (localStorage.getItem('access_token')) window.location.href = '/itinerarios';
+
+  const form = document.getElementById('registerForm');
+  const alertEl = document.getElementById('alert');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showAlert(msg, type = 'error') {
+    alertEl.textContent = msg;
+    alertEl.className = `alert alert-${type} visible`;
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nombre = document.getElementById('nombre').value.trim();
+    const correo = document.getElementById('correo').value.trim();
+    const contrasena = document.getElementById('contrasena').value;
+    const confirmar = document.getElementById('confirmar').value;
+
+    let valid = true;
+    const check = (id, errId, cond) => {
+      if (!cond) { document.getElementById(id).classList.add('error'); document.getElementById(errId).classList.add('visible'); valid = false; }
+      else { document.getElementById(id).classList.remove('error'); document.getElementById(errId).classList.remove('visible'); }
+    };
+
+    check('nombre', 'nombre-err', nombre.length > 0);
+    check('correo', 'correo-err', correo.includes('@') && correo.includes('.'));
+    check('contrasena', 'contrasena-err', contrasena.length >= 8);
+    check('confirmar', 'confirmar-err', contrasena === confirmar);
+    if (!valid) return;
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Creando cuenta...';
+    alertEl.classList.remove('visible');
+
+    try {
+      const res = await fetch('/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre, correo, contrasena }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        showAlert('¡Cuenta creada! Redirigiendo...', 'success');
+        setTimeout(() => window.location.href = '/login', 1500);
+      } else {
+        showAlert(data.error || 'Error al registrarse.');
+      }
+    } catch {
+      showAlert('Error de conexión. Verifica tu red.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Crear Cuenta';
+    }
+  });
+</script>
+{% endblock %}

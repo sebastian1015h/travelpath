@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}{% if itinerario_id %}Editar{% else %}Nuevo{% endif %} Itinerario — TravelPath{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+  <span class="navbar-brand">Travel<span>Path</span></span>
+  <div class="navbar-right">
+    <a href="/itinerarios" class="btn btn-ghost btn-sm">← Volver</a>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="form-container">
+  <h1 style="margin-bottom:1.75rem;">
+    {% if itinerario_id %}Editar Itinerario{% else %}Nuevo Itinerario{% endif %}
+  </h1>
+
+  <div id="alert" class="alert alert-error"></div>
+  <div id="alertSuccess" class="alert alert-success"></div>
+  <div id="overlapAlert" class="overlap-alert">⚠ Las fechas se solapan con otro de tus viajes.</div>
+
+  <form id="itinerarioForm" class="card" novalidate>
+
+    <!-- Aeropuertos -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;">
+      <div class="form-group">
+        <label for="origenInput">Aeropuerto de origen</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="origenInput" placeholder="Buscar por nombre o IATA..." autocomplete="off" />
+          <div class="autocomplete-list" id="origenList"></div>
+        </div>
+        <input type="hidden" id="origenIata" />
+        <input type="hidden" id="origenLat" />
+        <input type="hidden" id="origenLon" />
+        <span class="error-msg" id="origen-err">Selecciona un aeropuerto de origen.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="destinoInput">Aeropuerto de destino</label>
+        <div class="autocomplete-wrapper">
+          <input type="text" id="destinoInput" placeholder="Buscar por nombre o IATA..." autocomplete="off" />
+          <div class="autocomplete-list" id="destinoList"></div>
+        </div>
+        <input type="hidden" id="destinoIata" />
+        <input type="hidden" id="destinoLat" />
+        <input type="hidden" id="destinoLon" />
+        <span class="error-msg" id="destino-err">Selecciona un aeropuerto de destino.</span>
+      </div>
+    </div>
+
+    <!-- Distancia estimada entre aeropuertos -->
+    <div id="distanciaInfo" style="display:none;margin-bottom:1rem;padding:0.65rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:0.88rem;color:var(--text-muted);">
+      📏 Distancia: <strong id="distanciaKm">—</strong> km &nbsp;·&nbsp;
+      ⏱ Duración estimada de vuelo: <strong id="duracionEstimada">—</strong>
+    </div>
+
+    <!-- Fechas -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;">
+      <div class="form-group">
+        <label for="salida">Fecha y hora de salida</label>
+        <input type="datetime-local" id="salida" required />
+        <span class="error-msg" id="salida-err">La fecha de salida es requerida.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="llegada">
+          Fecha y hora de llegada
+          <span id="llegadaAutoTag" style="display:none;margin-left:0.5rem;font-size:0.72rem;background:rgba(16,185,129,0.15);color:var(--secondary);padding:0.15rem 0.5rem;border-radius:999px;">calculada automáticamente</span>
+        </label>
+        <input type="datetime-local" id="llegada" required />
+        <span class="error-msg" id="llegada-err">La fecha de llegada es requerida.</span>
+      </div>
+    </div>
+
+    <!-- Duración real (desde fechas seleccionadas) -->
+    <div id="durationDisplay" class="duration-display" style="margin-bottom:1.25rem;"></div>
+
+    <div class="form-group">
+      <label for="notas">Notas (opcional)</label>
+      <textarea id="notas" rows="3" placeholder="Información adicional sobre el viaje..."></textarea>
+    </div>
+
+    <div style="display:flex;gap:0.75rem;justify-content:flex-end;">
+      <a href="/itinerarios" class="btn btn-ghost">Cancelar</a>
+      <button type="submit" class="btn btn-primary" id="submitBtn">
+        {% if itinerario_id %}Guardar Cambios{% else %}Crear Itinerario{% endif %}
+      </button>
+    </div>
+  </form>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/itinerarios.js') }}"></script>
+<script>
+  requireAuth();
+
+  const ITINERARIO_ID = '{{ itinerario_id if itinerario_id else "" }}';
+  let misItinerarios = [];
+
+  // ── Haversine ────────────────────────────────────────────────────────────
+  function haversineKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLon / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  // Velocidad crucero promedio en km/h + 30 min de rodaje/despegue/aterrizaje
+  const VELOCIDAD_KMH = 870;
+  const EXTRA_MIN     = 30;
+
+  function minutosVuelo(distKm) {
+    return Math.round((distKm / VELOCIDAD_KMH) * 60) + EXTRA_MIN;
+  }
+
+  function fmtDuracion(minutos) {
+    return `${Math.floor(minutos / 60)}h ${minutos % 60}m`;
+  }
+
+  // ── Recalcular todo cuando cambia origen, destino o salida ──────────────
+  function recalcular() {
+    const lat1 = parseFloat(document.getElementById('origenLat').value);
+    const lon1 = parseFloat(document.getElementById('origenLon').value);
+    const lat2 = parseFloat(document.getElementById('destinoLat').value);
+    const lon2 = parseFloat(document.getElementById('destinoLon').value);
+    const salidaVal = document.getElementById('salida').value;
+
+    const tieneCoords = !isNaN(lat1) && !isNaN(lon1) && !isNaN(lat2) && !isNaN(lon2);
+
+    if (tieneCoords) {
+      const distKm = Math.round(haversineKm(lat1, lon1, lat2, lon2));
+      const mins   = minutosVuelo(distKm);
+      document.getElementById('distanciaKm').textContent     = distKm.toLocaleString();
+      document.getElementById('duracionEstimada').textContent = fmtDuracion(mins);
+      document.getElementById('distanciaInfo').style.display = 'block';
+
+      // Auto-rellenar llegada si hay hora de salida
+      if (salidaVal) {
+        const salidaDate  = new Date(salidaVal);
+        const llegadaDate = new Date(salidaDate.getTime() + mins * 60000);
+        const llegadaStr  = llegadaDate.toISOString().slice(0, 16);
+        document.getElementById('llegada').value = llegadaStr;
+        document.getElementById('llegadaAutoTag').style.display = 'inline';
+        mostrarDuracionReal();
+        checkOverlap();
+      }
+    } else {
+      document.getElementById('distanciaInfo').style.display = 'none';
+      // Si no hay coords pero sí llegada manual, mostrar duración igual
+      mostrarDuracionReal();
+      checkOverlap();
+    }
+  }
+
+  function mostrarDuracionReal() {
+    const s = document.getElementById('salida').value;
+    const l = document.getElementById('llegada').value;
+    const display = document.getElementById('durationDisplay');
+    if (!s || !l) { display.classList.remove('visible'); return; }
+    const diff = new Date(l) - new Date(s);
+    if (diff <= 0) { display.classList.remove('visible'); return; }
+    const h = Math.floor(diff / 3600000);
+    const m = Math.floor((diff % 3600000) / 60000);
+    display.textContent = `✈ Duración del vuelo: ${h}h ${m}m`;
+    display.classList.add('visible');
+  }
+
+  function checkOverlap() {
+    const s = new Date(document.getElementById('salida').value);
+    const l = new Date(document.getElementById('llegada').value);
+    const alertEl = document.getElementById('overlapAlert');
+    if (!s || !l || isNaN(s) || isNaN(l)) { alertEl.classList.remove('visible'); return; }
+    const overlap = misItinerarios.some(it => {
+      if (ITINERARIO_ID && it.id === ITINERARIO_ID) return false;
+      return s < new Date(it.fecha_hora_llegada) && l > new Date(it.fecha_hora_salida);
+    });
+    alertEl.classList.toggle('visible', overlap);
+  }
+
+  // ── Autocomplete con coordenadas ─────────────────────────────────────────
+  setupAutocomplete('origenInput',  'origenList',  'origenIata',  'origenLat',  'origenLon',  recalcular);
+  setupAutocomplete('destinoInput', 'destinoList', 'destinoIata', 'destinoLat', 'destinoLon', recalcular);
+
+  document.getElementById('salida').addEventListener('change', recalcular);
+  document.getElementById('llegada').addEventListener('change', () => {
+    document.getElementById('llegadaAutoTag').style.display = 'none';
+    mostrarDuracionReal();
+    checkOverlap();
+  });
+
+  // ── Init ─────────────────────────────────────────────────────────────────
+  async function init() {
+    const res = await apiFetch('/api/itinerarios');
+    if (res.ok) misItinerarios = await res.json();
+
+    if (ITINERARIO_ID) {
+      const r = await apiFetch(`/api/itinerarios/${ITINERARIO_ID}`);
+      if (r.ok) {
+        const it = await r.json();
+        const o = it.aeropuerto_origen;
+        const d = it.aeropuerto_destino;
+
+        document.getElementById('origenInput').value  = `${o.iata} — ${o.nombre}`;
+        document.getElementById('origenIata').value   = o.iata;
+        document.getElementById('origenLat').value    = o.latitud  || '';
+        document.getElementById('origenLon').value    = o.longitud || '';
+
+        document.getElementById('destinoInput').value = `${d.iata} — ${d.nombre}`;
+        document.getElementById('destinoIata').value  = d.iata;
+        document.getElementById('destinoLat').value   = d.latitud  || '';
+        document.getElementById('destinoLon').value   = d.longitud || '';
+
+        document.getElementById('salida').value   = it.fecha_hora_salida.slice(0, 16);
+        document.getElementById('llegada').value  = it.fecha_hora_llegada.slice(0, 16);
+        document.getElementById('notas').value    = it.notas || '';
+        recalcular();
+      }
+    }
+  }
+
+  // ── Submit ───────────────────────────────────────────────────────────────
+  document.getElementById('itinerarioForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const origenIata  = document.getElementById('origenIata').value;
+    const destinoIata = document.getElementById('destinoIata').value;
+    const salida      = document.getElementById('salida').value;
+    const llegada     = document.getElementById('llegada').value;
+    const notas       = document.getElementById('notas').value.trim();
+
+    let valid = true;
+    const chk = (id, errId, cond) => {
+      document.getElementById(id).classList.toggle('error', !cond);
+      document.getElementById(errId).classList.toggle('visible', !cond);
+      if (!cond) valid = false;
+    };
+    chk('origenInput',  'origen-err',  !!origenIata);
+    chk('destinoInput', 'destino-err', !!destinoIata);
+    chk('salida',       'salida-err',  !!salida);
+    chk('llegada',      'llegada-err', !!llegada);
+    if (!valid) return;
+
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Guardando...';
+    document.getElementById('alert').classList.remove('visible');
+
+    try {
+      const url    = ITINERARIO_ID ? `/api/itinerarios/${ITINERARIO_ID}` : '/api/itinerarios';
+      const method = ITINERARIO_ID ? 'PUT' : 'POST';
+      const res = await apiFetch(url, {
+        method,
+        body: JSON.stringify({
+          aeropuerto_origen_iata:  origenIata,
+          aeropuerto_destino_iata: destinoIata,
+          fecha_hora_salida:  salida.replace('T', ' '),
+          fecha_hora_llegada: llegada.replace('T', ' '),
+          notas,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        document.getElementById('alertSuccess').textContent =
+          ITINERARIO_ID ? 'Itinerario actualizado.' : 'Itinerario creado.';
+        document.getElementById('alertSuccess').classList.add('visible');
+        setTimeout(() => window.location.href = '/itinerarios', 1200);
+      } else {
+        document.getElementById('alert').textContent = data.error || 'Error al guardar.';
+        document.getElementById('alert').classList.add('visible');
+      }
+    } catch {
+      document.getElementById('alert').textContent = 'Error de conexión.';
+      document.getElementById('alert').classList.add('visible');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = ITINERARIO_ID ? 'Guardar Cambios' : 'Crear Itinerario';
+    }
+  });
+
+  init();
+</script>
+{% endblock %}
