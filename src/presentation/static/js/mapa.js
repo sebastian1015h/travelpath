@@ -102,17 +102,28 @@ function granCirculo(lat1, lon1, lat2, lon2, n) {
     Math.cos(φ1) * Math.cos(φ2) * Math.sin((λ2 - λ1) / 2) ** 2
   ));
 
-  const lats = [], lons = [];
+  const rawLats = [], rawLons = [];
   for (let i = 0; i <= n; i++) {
     const f = i / n;
-    if (d < 0.0001) { lats.push(lat1); lons.push(lon1); continue; }
+    if (d < 0.0001) { rawLats.push(lat1); rawLons.push(lon1); continue; }
     const A = Math.sin((1 - f) * d) / Math.sin(d);
     const B = Math.sin(f * d) / Math.sin(d);
     const x = A * Math.cos(φ1) * Math.cos(λ1) + B * Math.cos(φ2) * Math.cos(λ2);
     const y = A * Math.cos(φ1) * Math.sin(λ1) + B * Math.cos(φ2) * Math.sin(λ2);
     const z = A * Math.sin(φ1) + B * Math.sin(φ2);
-    lats.push(toD(Math.atan2(z, Math.sqrt(x ** 2 + y ** 2))));
-    lons.push(toD(Math.atan2(y, x)));
+    rawLats.push(toD(Math.atan2(z, Math.sqrt(x ** 2 + y ** 2))));
+    rawLons.push(toD(Math.atan2(y, x)));
+  }
+
+  // Insertar null donde el arco cruza el antimeridiano para evitar la línea horizontal
+  const lats = [], lons = [];
+  for (let i = 0; i < rawLats.length; i++) {
+    if (i > 0 && Math.abs(rawLons[i] - rawLons[i - 1]) > 180) {
+      lats.push(null);
+      lons.push(null);
+    }
+    lats.push(rawLats[i]);
+    lons.push(rawLons[i]);
   }
   return { lats, lons };
 }

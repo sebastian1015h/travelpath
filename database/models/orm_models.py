@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, String, Boolean, Integer, Float, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Boolean, Integer, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship, DeclarativeBase
 
 
@@ -27,17 +27,6 @@ class UsuarioModel(Base):
 
     itinerarios = relationship("ItinerarioModel", back_populates="usuario", cascade="all, delete-orphan")
 
-
-class AeropuertoCacheModel(Base):
-    __tablename__ = "aeropuerto_cache"
-
-    iata_code = Column(String(3), primary_key=True)
-    nombre = Column(String(255), nullable=False)
-    ciudad = Column(String(255), nullable=False)
-    pais = Column(String(255), nullable=False)
-    latitud = Column(Float, nullable=True)
-    longitud = Column(Float, nullable=True)
-    consultado_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class ItinerarioModel(Base):

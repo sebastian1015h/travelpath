@@ -12,7 +12,6 @@ from src.infrastructure.adapters.output.external.api_colombia_adapter import Api
 
 from src.application.services.auth_service import AuthService
 from src.application.services.itinerario_service import ItinerarioService
-from src.application.services.aeropuerto_cache_service import AeropuertoCacheService
 from src.application.services.token_blacklist_service import TokenBlacklistService
 
 from src.infrastructure.adapters.input.web.auth_controller import create_auth_blueprint
@@ -28,15 +27,15 @@ def create_app() -> Flask:
     )
 
     app.config["JWT_SECRET_KEY"] = settings.jwt_secret_key
-    app.config["SECRET_KEY"] = settings.jwt_secret_key
-    app.config["DEBUG"] = settings.flask_debug
+    app.config["SECRET_KEY"]     = settings.jwt_secret_key
+    app.config["DEBUG"]          = settings.flask_debug
 
     origins = settings.frontend_origin
     CORS(app, resources={r"/api/*": {"origins": origins}, r"/auth/*": {"origins": origins}})
 
     jwt: JWTManager = init_jwt(app)
 
-    db_session = get_db_session()
+    db_session     = get_db_session()
     token_blacklist = TokenBlacklistService(db_session)
 
     @jwt.token_in_blocklist_loader
@@ -60,17 +59,16 @@ def create_app() -> Flask:
 
     init_db()
 
-    usuario_repo = SQLAlchemyUsuarioRepo(db_session)
+    usuario_repo    = SQLAlchemyUsuarioRepo(db_session)
     itinerario_repo = SQLAlchemyItinerarioRepo(db_session)
     aeropuerto_client = ApiColombiaAdapter()
-    cache_service = AeropuertoCacheService(db_session)
 
-    auth_service = AuthService(usuario_repo, token_blacklist)
-    itinerario_service = ItinerarioService(itinerario_repo, aeropuerto_client, cache_service)
+    auth_service       = AuthService(usuario_repo, token_blacklist)
+    itinerario_service = ItinerarioService(itinerario_repo, aeropuerto_client)
 
     app.register_blueprint(create_auth_blueprint(auth_service))
     app.register_blueprint(create_itinerario_blueprint(itinerario_service))
-    app.register_blueprint(create_aeropuerto_blueprint(aeropuerto_client, cache_service))
+    app.register_blueprint(create_aeropuerto_blueprint(aeropuerto_client))
 
     _register_frontend_routes(app)
 

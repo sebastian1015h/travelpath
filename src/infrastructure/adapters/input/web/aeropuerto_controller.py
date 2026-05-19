@@ -2,13 +2,9 @@ from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required
 
 from src.domain.ports.output.aeropuerto_client_port import AeropuertoClientPort
-from src.application.services.aeropuerto_cache_service import AeropuertoCacheService
 
 
-def create_aeropuerto_blueprint(
-    aeropuerto_client: AeropuertoClientPort,
-    cache_service: AeropuertoCacheService = None,
-) -> Blueprint:
+def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blueprint:
     aeropuerto_bp = Blueprint("aeropuertos", __name__, url_prefix="/api/aeropuertos")
 
     @aeropuerto_bp.get("")
@@ -17,80 +13,37 @@ def create_aeropuerto_blueprint(
         nombre = request.args.get("nombre", "").strip()
         if not nombre or len(nombre) < 2:
             return jsonify({"error": "Ingresa al menos 2 caracteres."}), 400
-
-        resultados = []
-
-        # 1. Búsqueda local en BD (rápida, siempre disponible)
-        if cache_service:
-            resultados = cache_service.buscar_por_texto(nombre)
-
-        # 2. Si hay pocos resultados locales, complementa con la API externa
-        if len(resultados) < 4:
-            try:
-                externos = aeropuerto_client.buscar_por_nombre(nombre)
-                iatas_existentes = {r.iata for r in resultados}
-                for a in externos:
-                    if a.iata not in iatas_existentes:
-                        resultados.append(a)
-                        # Guardar en caché para próximas búsquedas
-                        if cache_service and a.latitud and a.longitud:
-                            try:
-                                cache_service.guardar_o_actualizar(a)
-                            except Exception:
-                                pass
-            except Exception:
-                pass  # La API falló, devolvemos solo los locales
-
+        resultados = aeropuerto_client.buscar_por_nombre(nombre)
         return jsonify([r.to_dict() for r in resultados[:12]]), 200
 
     @aeropuerto_bp.get("/mapa")
     @jwt_required()
     def datos_mapa():
         from concurrent.futures import ThreadPoolExecutor, as_completed
-        aeropuertos = cache_service.listar_todos() if cache_service else []
-        if len(aeropuertos) < 30 and cache_service:
-            with ThreadPoolExecutor(max_workers=5) as executor:
-                futures = {executor.submit(aeropuerto_client.listar_aeropuertos, p): p for p in range(1, 6)}
-                for future in as_completed(futures):
-                    try:
-                        for a in future.result():
-                            if a.latitud and a.longitud:
-                                try:
-                                    cache_service.guardar_o_actualizar(a)
-                                except Exception:
-                                    pass
-                    except Exception:
-                        pass
-            aeropuertos = cache_service.listar_todos()
-        return jsonify([a.to_dict() for a in aeropuertos if a.latitud and a.longitud]), 200
+        aeropuertos = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(aeropuerto_client.listar_aeropuertos, p) for p in range(1, 6)]
+            for future in as_completed(futures):
+                try:
+                    aeropuertos.extend(future.result())
+                except Exception:
+                    pass
+        vistos = set()
+        unicos = []
+        for a in aeropuertos:
+            if a.iata not in vistos and a.latitud and a.longitud:
+                vistos.add(a.iata)
+                unicos.append(a)
+        return jsonify([a.to_dict() for a in unicos]), 200
 
     @aeropuerto_bp.get("/<string:iata>")
     @jwt_required()
     def buscar_por_iata(iata: str):
         if len(iata) != 3:
             return jsonify({"error": "El código IATA debe tener exactamente 3 letras."}), 400
-
-        iata = iata.upper()
-
-        # 1. Caché local primero
-        if cache_service:
-            resultado = cache_service.obtener_por_iata(iata)
-            if resultado:
-                return jsonify(resultado.to_dict()), 200
-
-        # 2. API externa
-        try:
-            resultado = aeropuerto_client.buscar_por_iata(iata)
-            if resultado:
-                if cache_service and resultado.latitud:
-                    try:
-                        cache_service.guardar_o_actualizar(resultado)
-                    except Exception:
-                        pass
-                return jsonify(resultado.to_dict()), 200
-        except Exception:
-            pass
-
-        return jsonify({"error": f"Aeropuerto '{iata}' no encontrado."}), 404
+        resultado = aeropuerto_client.buscar_por_iata(iata.upper())
+        if resultado:
+            return jsonify(resultado.to_dict()), 200
+        return jsonify({"error": f"Aeropuerto '{iata.upper()}' no encontrado."}), 404
 
     return aeropuerto_bp

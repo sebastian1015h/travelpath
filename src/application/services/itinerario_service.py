@@ -27,20 +27,15 @@ class ItinerarioService:
         self,
         itinerario_repo: ItinerarioRepositoryPort,
         aeropuerto_client: AeropuertoClientPort,
-        aeropuerto_cache_repo=None,
     ):
         self._repo = itinerario_repo
         self._aeropuerto_client = aeropuerto_client
-        self._aeropuerto_cache_repo = aeropuerto_cache_repo
 
     def crear(self, dto: CrearItinerarioDTO, usuario_id: str) -> ItinerarioResponseDTO:
-        origen = self._obtener_aeropuerto(dto.aeropuerto_origen_iata)
+        origen  = self._obtener_aeropuerto(dto.aeropuerto_origen_iata)
         destino = self._obtener_aeropuerto(dto.aeropuerto_destino_iata)
 
-        self._cachear_aeropuerto(origen)
-        self._cachear_aeropuerto(destino)
-
-        salida_iso = dto.fecha_hora_salida.isoformat()
+        salida_iso  = dto.fecha_hora_salida.isoformat()
         llegada_iso = dto.fecha_hora_llegada.isoformat()
         if self._repo.existe_superposicion(usuario_id, salida_iso, llegada_iso):
             raise SuperposicionDeViajesException(
@@ -80,10 +75,8 @@ class ItinerarioService:
 
         if dto.aeropuerto_origen_iata:
             itinerario.aeropuerto_origen_iata = dto.aeropuerto_origen_iata.upper()
-            self._cachear_aeropuerto(self._obtener_aeropuerto(dto.aeropuerto_origen_iata))
         if dto.aeropuerto_destino_iata:
             itinerario.aeropuerto_destino_iata = dto.aeropuerto_destino_iata.upper()
-            self._cachear_aeropuerto(self._obtener_aeropuerto(dto.aeropuerto_destino_iata))
         if dto.fecha_hora_salida:
             itinerario.fecha_hora_salida = dto.fecha_hora_salida
         if dto.fecha_hora_llegada:
@@ -93,7 +86,7 @@ class ItinerarioService:
 
         itinerario._validar()
 
-        salida_iso = itinerario.fecha_hora_salida.isoformat()
+        salida_iso  = itinerario.fecha_hora_salida.isoformat()
         llegada_iso = itinerario.fecha_hora_llegada.isoformat()
         if self._repo.existe_superposicion(usuario_id, salida_iso, llegada_iso, excluir_id=id):
             raise SuperposicionDeViajesException(
@@ -114,18 +107,10 @@ class ItinerarioService:
         historial = defaultdict(list)
         for it in itinerarios:
             anio = it.fecha_hora_salida.year
-            enriquecido = self._enriquecer(it)
-            historial[str(anio)].append(enriquecido.to_dict())
+            historial[str(anio)].append(self._enriquecer(it).to_dict())
         return dict(sorted(historial.items(), reverse=True))
 
     def _obtener_aeropuerto(self, iata: str) -> AeropuertoDTO:
-        if self._aeropuerto_cache_repo:
-            try:
-                cached = self._aeropuerto_cache_repo.obtener_por_iata(iata)
-                if cached:
-                    return cached
-            except Exception:
-                pass
         aeropuerto = self._aeropuerto_client.buscar_por_iata(iata)
         if not aeropuerto:
             raise AeropuertoNoEncontradoException(
@@ -133,26 +118,7 @@ class ItinerarioService:
             )
         return aeropuerto
 
-    def _cachear_aeropuerto(self, dto: AeropuertoDTO) -> None:
-        if self._aeropuerto_cache_repo:
-            try:
-                self._aeropuerto_cache_repo.guardar_o_actualizar(dto)
-            except Exception as ex:
-                logger.warning(f"No se pudo cachear aeropuerto {dto.iata}: {ex}")
-
-    def _enriquecer(self, itinerario: Itinerario) -> ItinerarioResponseDTO:
-        origen = self._resolver_aeropuerto(itinerario.aeropuerto_origen_iata)
-        destino = self._resolver_aeropuerto(itinerario.aeropuerto_destino_iata)
-        return self._to_dto(itinerario, origen, destino)
-
     def _resolver_aeropuerto(self, iata: str) -> AeropuertoDTO:
-        if self._aeropuerto_cache_repo:
-            try:
-                cached = self._aeropuerto_cache_repo.obtener_por_iata(iata)
-                if cached:
-                    return cached
-            except Exception:
-                pass
         try:
             resultado = self._aeropuerto_client.buscar_por_iata(iata)
             if resultado:
@@ -161,13 +127,18 @@ class ItinerarioService:
             pass
         return AeropuertoDTO(iata=iata, nombre=iata, ciudad="", pais="")
 
+    def _enriquecer(self, itinerario: Itinerario) -> ItinerarioResponseDTO:
+        origen  = self._resolver_aeropuerto(itinerario.aeropuerto_origen_iata)
+        destino = self._resolver_aeropuerto(itinerario.aeropuerto_destino_iata)
+        return self._to_dto(itinerario, origen, destino)
+
     def _to_dto(
         self,
         itinerario: Itinerario,
         origen: AeropuertoDTO,
         destino: AeropuertoDTO,
     ) -> ItinerarioResponseDTO:
-        delta = itinerario.fecha_hora_llegada - itinerario.fecha_hora_salida
+        delta    = itinerario.fecha_hora_llegada - itinerario.fecha_hora_salida
         duracion = int(delta.total_seconds() / 60)
         return ItinerarioResponseDTO(
             id=itinerario.id,
