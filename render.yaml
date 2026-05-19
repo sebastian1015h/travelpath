@@ -1,19 +1,14 @@
 services:
   - type: web
     name: travelpath
-    runtime: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
+    runtime: docker           # Render usa el Dockerfile en lugar del buildpack Python
+    dockerfilePath: ./Dockerfile
     envVars:
-      - key: FLASK_ENV
-        value: production
       - key: FLASK_DEBUG
-        value: "False"
-      - key: JWT_ACCESS_TOKEN_EXPIRES
-        value: "86400"
-      - key: API_COLOMBIA_BASE_URL
-        value: https://api-colombia.com/api/v1
+        value: "false"
       - key: JWT_SECRET_KEY
-        generateValue: true   # Render genera una clave segura automáticamente
+        generateValue: true
       - key: DATABASE_URL
-        sync: false           # Lo ingresas manualmente en el dashboard de Render
+        sync: false           # ingresar manualmente en el dashboard de Render
+      - key: FRONTEND_ORIGIN
+        sync: false           # ingresar manualmente (ej. https://travelpath.onrender.com)

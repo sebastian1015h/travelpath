@@ -72,6 +72,11 @@ def create_app() -> Flask:
 
     _register_frontend_routes(app)
 
+    @app.get("/health")
+    def health():
+        from flask import jsonify
+        return jsonify({"status": "ok"}), 200
+
     @app.teardown_appcontext
     def cleanup_session(*_):
         remove_db_session()

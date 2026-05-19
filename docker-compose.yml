@@ -1,0 +1,23 @@
+version: "3.9"
+
+services:
+  web:
+    build:
+      context: .
+      target: runtime       # usa solo la imagen final, no el builder
+    image: travelpath:local
+    container_name: travelpath_web
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env                # carga DATABASE_URL, JWT_SECRET_KEY, etc.
+    environment:
+      - FLASK_DEBUG=false   # siempre false en el contenedor, aunque .env diga true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
