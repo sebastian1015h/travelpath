@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 AIRPORTGAP_URL = "https://airportgap.com/api/airports"
 COLOMBIA_URL   = "https://api-colombia.com/api/v1"
-TIMEOUT        = 10.0
+TIMEOUT        = 5.0
 
 
 class ApiColombiaAdapter(AeropuertoClientPort):

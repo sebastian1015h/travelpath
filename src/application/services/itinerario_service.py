@@ -1,5 +1,6 @@
 import logging
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import List
 
 from src.domain.entities.itinerario import Itinerario
@@ -9,7 +10,6 @@ from src.domain.exceptions.domain_exceptions import (
     ItinerarioNoEncontradoException,
     ItinerarioPasadoException,
     SuperposicionDeViajesException,
-    AeropuertoNoEncontradoException,
 )
 from src.application.dtos.itinerario_dto import (
     CrearItinerarioDTO,
@@ -32,8 +32,8 @@ class ItinerarioService:
         self._aeropuerto_client = aeropuerto_client
 
     def crear(self, dto: CrearItinerarioDTO, usuario_id: str) -> ItinerarioResponseDTO:
-        origen  = self._obtener_aeropuerto(dto.aeropuerto_origen_iata)
-        destino = self._obtener_aeropuerto(dto.aeropuerto_destino_iata)
+        origen  = self._resolver_aeropuerto(dto.aeropuerto_origen_iata)
+        destino = self._resolver_aeropuerto(dto.aeropuerto_destino_iata)
 
         salida_iso  = dto.fecha_hora_salida.isoformat()
         llegada_iso = dto.fecha_hora_llegada.isoformat()
@@ -55,7 +55,7 @@ class ItinerarioService:
 
     def listar_por_usuario(self, usuario_id: str) -> List[ItinerarioResponseDTO]:
         itinerarios = self._repo.listar_por_usuario(usuario_id)
-        return [self._enriquecer(i) for i in itinerarios]
+        return self._enriquecer_lista(itinerarios)
 
     def obtener_detalle(self, id: str, usuario_id: str) -> ItinerarioResponseDTO:
         itinerario = self._repo.obtener_por_id(id)
@@ -104,21 +104,12 @@ class ItinerarioService:
 
     def historial_por_anio(self, usuario_id: str) -> dict:
         itinerarios = self._repo.listar_por_usuario(usuario_id)
+        dtos = self._enriquecer_lista(itinerarios)
         historial = defaultdict(list)
-        for it in itinerarios:
-            anio = it.fecha_hora_salida.year
-            historial[str(anio)].append(self._enriquecer(it).to_dict())
+        for dto in dtos:
+            anio = dto.fecha_hora_salida.year
+            historial[str(anio)].append(dto.to_dict())
         return dict(sorted(historial.items(), reverse=True))
-
-    def _obtener_aeropuerto(self, iata: str) -> AeropuertoDTO:
-        try:
-            aeropuerto = self._aeropuerto_client.buscar_por_iata(iata)
-            if aeropuerto:
-                return aeropuerto
-        except Exception:
-            pass
-        # Si la API externa falla, devolvemos un DTO mínimo para no bloquear la creación
-        return AeropuertoDTO(iata=iata.upper(), nombre=iata.upper(), ciudad="", pais="")
 
     def _resolver_aeropuerto(self, iata: str) -> AeropuertoDTO:
         try:
@@ -127,7 +118,22 @@ class ItinerarioService:
                 return resultado
         except Exception:
             pass
-        return AeropuertoDTO(iata=iata, nombre=iata, ciudad="", pais="")
+        return AeropuertoDTO(iata=iata.upper(), nombre=iata.upper(), ciudad="", pais="")
+
+    def _enriquecer_lista(self, itinerarios: List[Itinerario]) -> List[ItinerarioResponseDTO]:
+        if not itinerarios:
+            return []
+        iatas = {it.aeropuerto_origen_iata for it in itinerarios} | {it.aeropuerto_destino_iata for it in itinerarios}
+        cache: dict[str, AeropuertoDTO] = {}
+        with ThreadPoolExecutor(max_workers=min(len(iatas), 8)) as executor:
+            futures = {executor.submit(self._resolver_aeropuerto, iata): iata for iata in iatas}
+            for future in as_completed(futures):
+                iata = futures[future]
+                try:
+                    cache[iata] = future.result()
+                except Exception:
+                    cache[iata] = AeropuertoDTO(iata=iata, nombre=iata, ciudad="", pais="")
+        return [self._to_dto(it, cache[it.aeropuerto_origen_iata], cache[it.aeropuerto_destino_iata]) for it in itinerarios]
 
     def _enriquecer(self, itinerario: Itinerario) -> ItinerarioResponseDTO:
         origen  = self._resolver_aeropuerto(itinerario.aeropuerto_origen_iata)

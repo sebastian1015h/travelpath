@@ -8,8 +8,6 @@ from src.domain.exceptions.domain_exceptions import (
     ItinerarioNoEncontradoException,
     ItinerarioPasadoException,
     SuperposicionDeViajesException,
-    AeropuertoNoEncontradoException,
-    FechaPasadaException,
     FechaInvalidaException,
     OrigenIgualDestinoException,
 )
@@ -55,12 +53,10 @@ def create_itinerario_blueprint(itinerario_service: ItinerarioService) -> Bluepr
             )
             resultado = itinerario_service.crear(dto, usuario_id)
             return jsonify(resultado.to_dict()), 201
-        except (FechaPasadaException, FechaInvalidaException, OrigenIgualDestinoException) as e:
+        except (FechaInvalidaException, OrigenIgualDestinoException) as e:
             return jsonify({"error": str(e)}), 422
         except SuperposicionDeViajesException as e:
             return jsonify({"error": str(e)}), 409
-        except AeropuertoNoEncontradoException as e:
-            return jsonify({"error": str(e)}), 404
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception:
@@ -102,12 +98,10 @@ def create_itinerario_blueprint(itinerario_service: ItinerarioService) -> Bluepr
             return jsonify({"error": str(e)}), 404
         except ItinerarioPasadoException as e:
             return jsonify({"error": str(e)}), 403
-        except (FechaPasadaException, FechaInvalidaException, OrigenIgualDestinoException) as e:
+        except (FechaInvalidaException, OrigenIgualDestinoException) as e:
             return jsonify({"error": str(e)}), 422
         except SuperposicionDeViajesException as e:
             return jsonify({"error": str(e)}), 409
-        except AeropuertoNoEncontradoException as e:
-            return jsonify({"error": str(e)}), 404
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
         except Exception:

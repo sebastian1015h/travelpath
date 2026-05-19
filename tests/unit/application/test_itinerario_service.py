@@ -7,7 +7,6 @@ from src.application.dtos.itinerario_dto import CrearItinerarioDTO
 from src.application.dtos.aeropuerto_dto import AeropuertoDTO
 from src.domain.exceptions.domain_exceptions import (
     SuperposicionDeViajesException,
-    AeropuertoNoEncontradoException,
     ItinerarioNoEncontradoException,
 )
 
@@ -75,9 +74,24 @@ def test_detecta_superposicion(servicio):
         svc.crear(dto, "u1")
 
 
-def test_aeropuerto_no_encontrado_lanza_excepcion(servicio):
+def test_aeropuerto_no_encontrado_usa_dto_minimo(servicio):
     svc, repo, client = servicio
     client.buscar_por_iata.return_value = None
+    repo.existe_superposicion.return_value = False
+
+    from src.domain.entities.itinerario import Itinerario
+    it = object.__new__(Itinerario)
+    it.id = "it-2"
+    it.usuario_id = "u1"
+    it.aeropuerto_origen_iata  = "XXX"
+    it.aeropuerto_destino_iata = "MDE"
+    it.fecha_hora_salida  = _futuro(2)
+    it.fecha_hora_llegada = _futuro(4)
+    it.notas      = ""
+    it.activo     = True
+    it.created_at = datetime.utcnow()
+    it.updated_at = datetime.utcnow()
+    repo.guardar.return_value = it
 
     dto = CrearItinerarioDTO(
         aeropuerto_origen_iata="XXX",
@@ -85,8 +99,8 @@ def test_aeropuerto_no_encontrado_lanza_excepcion(servicio):
         fecha_hora_salida=_futuro(2),
         fecha_hora_llegada=_futuro(4),
     )
-    with pytest.raises(AeropuertoNoEncontradoException):
-        svc.crear(dto, "u1")
+    resultado = svc.crear(dto, "u1")
+    assert resultado.aeropuerto_origen.iata == "XXX"
 
 
 def test_eliminar_itinerario_no_encontrado(servicio):
