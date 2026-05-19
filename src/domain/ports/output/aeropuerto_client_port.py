@@ -13,3 +13,6 @@ class AeropuertoClientPort(ABC):
 
     @abstractmethod
     def listar_aeropuertos(self, pagina: int = 1) -> List[AeropuertoDTO]: ...
+
+    @abstractmethod
+    def listar_colombia(self) -> List[AeropuertoDTO]: ...

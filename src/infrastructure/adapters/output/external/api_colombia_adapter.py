@@ -73,6 +73,19 @@ class ApiColombiaAdapter(AeropuertoClientPort):
             logger.warning("AirportGap listar página %s falló: %s", pagina, ex)
             return []
 
+    def listar_colombia(self) -> List[AeropuertoDTO]:
+        try:
+            with httpx.Client(timeout=TIMEOUT) as client:
+                res = client.get(f"{COLOMBIA_URL}/Airport")
+            res.raise_for_status()
+            return [
+                self._mapear_colombia(a) for a in res.json()
+                if a.get("iataCode") and a.get("latitude") and a.get("longitude")
+            ]
+        except Exception as ex:
+            logger.warning("API Colombia listar_colombia falló: %s", ex)
+            return []
+
     def _mapear_gap(self, raw: dict) -> AeropuertoDTO:
         attrs = raw.get("attributes", raw)
         lat = attrs.get("latitude")
