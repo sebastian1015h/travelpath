@@ -78,6 +78,18 @@ class ApiColombiaAdapter(AeropuertoClientPort):
 
         return None
 
+    # ── Listado paginado ─────────────────────────────────────────────────────
+
+    def listar_aeropuertos(self, pagina: int = 1) -> List[AeropuertoDTO]:
+        try:
+            res = self._client.get(self.AIRPORTGAP_URL, params={"page": pagina})
+            res.raise_for_status()
+            data = res.json().get("data", [])
+            return [self._mapear_gap(a) for a in data if self._iata_valida(a)]
+        except Exception as ex:
+            logger.warning(f"AirportGap listar página {pagina} falló: {ex}")
+            return []
+
     # ── Mapeadores ───────────────────────────────────────────────────────────
 
     def _mapear_gap(self, raw: dict) -> AeropuertoDTO:

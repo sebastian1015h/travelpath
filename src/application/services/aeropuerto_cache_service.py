@@ -20,25 +20,29 @@ class AeropuertoCacheService:
         self._session = session
 
     def guardar_o_actualizar(self, dto: AeropuertoDTO) -> None:
-        existing = self._session.get(AeropuertoCacheModel, dto.iata.upper())
-        if existing:
-            existing.nombre = dto.nombre
-            existing.ciudad = dto.ciudad
-            existing.pais = dto.pais
-            existing.latitud = dto.latitud
-            existing.longitud = dto.longitud
-            existing.consultado_at = datetime.utcnow()
-        else:
-            model = AeropuertoCacheModel(
-                iata_code=dto.iata.upper(),
-                nombre=dto.nombre,
-                ciudad=dto.ciudad,
-                pais=dto.pais,
-                latitud=dto.latitud,
-                longitud=dto.longitud,
-            )
-            self._session.add(model)
-        self._session.commit()
+        try:
+            existing = self._session.get(AeropuertoCacheModel, dto.iata.upper())
+            if existing:
+                existing.nombre = dto.nombre
+                existing.ciudad = dto.ciudad
+                existing.pais = dto.pais
+                existing.latitud = dto.latitud
+                existing.longitud = dto.longitud
+                existing.consultado_at = datetime.utcnow()
+            else:
+                model = AeropuertoCacheModel(
+                    iata_code=dto.iata.upper(),
+                    nombre=dto.nombre,
+                    ciudad=dto.ciudad,
+                    pais=dto.pais,
+                    latitud=dto.latitud,
+                    longitud=dto.longitud,
+                )
+                self._session.add(model)
+            self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
 
     def buscar_por_texto(self, texto: str) -> List[AeropuertoDTO]:
         """Búsqueda local tolerante a acentos: IATA, ciudad, nombre o país."""

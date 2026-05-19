@@ -14,23 +14,27 @@ class SQLAlchemyItinerarioRepo(ItinerarioRepositoryPort):
         self._session = session
 
     def guardar(self, itinerario: Itinerario) -> Itinerario:
-        model = ItinerarioModel(
-            id=itinerario.id,
-            usuario_id=itinerario.usuario_id,
-            aeropuerto_origen_iata=itinerario.aeropuerto_origen_iata.upper(),
-            aeropuerto_destino_iata=itinerario.aeropuerto_destino_iata.upper(),
-            fecha_hora_salida=itinerario.fecha_hora_salida,
-            fecha_hora_llegada=itinerario.fecha_hora_llegada,
-            duracion_minutos=itinerario.calcular_duracion(),
-            notas=itinerario.notas,
-            activo=itinerario.activo,
-            created_at=itinerario.created_at,
-            updated_at=itinerario.updated_at,
-        )
-        self._session.add(model)
-        self._session.commit()
-        self._session.refresh(model)
-        return self._to_entity(model)
+        try:
+            model = ItinerarioModel(
+                id=itinerario.id,
+                usuario_id=itinerario.usuario_id,
+                aeropuerto_origen_iata=itinerario.aeropuerto_origen_iata.upper(),
+                aeropuerto_destino_iata=itinerario.aeropuerto_destino_iata.upper(),
+                fecha_hora_salida=itinerario.fecha_hora_salida,
+                fecha_hora_llegada=itinerario.fecha_hora_llegada,
+                duracion_minutos=itinerario.calcular_duracion(),
+                notas=itinerario.notas,
+                activo=itinerario.activo,
+                created_at=itinerario.created_at,
+                updated_at=itinerario.updated_at,
+            )
+            self._session.add(model)
+            self._session.commit()
+            self._session.refresh(model)
+            return self._to_entity(model)
+        except Exception:
+            self._session.rollback()
+            raise
 
     def obtener_por_id(self, id: str) -> Optional[Itinerario]:
         model = (
@@ -53,26 +57,34 @@ class SQLAlchemyItinerarioRepo(ItinerarioRepositoryPort):
         return [self._to_entity(m) for m in models]
 
     def actualizar(self, itinerario: Itinerario) -> Itinerario:
-        model = self._session.get(ItinerarioModel, itinerario.id)
-        if model:
-            model.aeropuerto_origen_iata = itinerario.aeropuerto_origen_iata.upper()
-            model.aeropuerto_destino_iata = itinerario.aeropuerto_destino_iata.upper()
-            model.fecha_hora_salida = itinerario.fecha_hora_salida
-            model.fecha_hora_llegada = itinerario.fecha_hora_llegada
-            model.duracion_minutos = itinerario.calcular_duracion()
-            model.notas = itinerario.notas
-            model.activo = itinerario.activo
-            model.updated_at = itinerario.updated_at
-            self._session.commit()
-            self._session.refresh(model)
-        return self._to_entity(model)
+        try:
+            model = self._session.get(ItinerarioModel, itinerario.id)
+            if model:
+                model.aeropuerto_origen_iata = itinerario.aeropuerto_origen_iata.upper()
+                model.aeropuerto_destino_iata = itinerario.aeropuerto_destino_iata.upper()
+                model.fecha_hora_salida = itinerario.fecha_hora_salida
+                model.fecha_hora_llegada = itinerario.fecha_hora_llegada
+                model.duracion_minutos = itinerario.calcular_duracion()
+                model.notas = itinerario.notas
+                model.activo = itinerario.activo
+                model.updated_at = datetime.utcnow()
+                self._session.commit()
+                self._session.refresh(model)
+            return self._to_entity(model)
+        except Exception:
+            self._session.rollback()
+            raise
 
     def eliminar_logico(self, id: str) -> None:
-        model = self._session.get(ItinerarioModel, id)
-        if model:
-            model.activo = False
-            model.updated_at = datetime.utcnow()
-            self._session.commit()
+        try:
+            model = self._session.get(ItinerarioModel, id)
+            if model:
+                model.activo = False
+                model.updated_at = datetime.utcnow()
+                self._session.commit()
+        except Exception:
+            self._session.rollback()
+            raise
 
     def existe_superposicion(
         self, usuario_id: str, salida: str, llegada: str, excluir_id: str = None
@@ -92,7 +104,6 @@ class SQLAlchemyItinerarioRepo(ItinerarioRepositoryPort):
         )
         if excluir_id:
             query = query.filter(ItinerarioModel.id != excluir_id)
-
         return query.count() > 0
 
     def _to_entity(self, model: ItinerarioModel) -> Itinerario:

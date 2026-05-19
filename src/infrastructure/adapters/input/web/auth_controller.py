@@ -29,7 +29,7 @@ def create_auth_blueprint(auth_service: AuthService) -> Blueprint:
             return jsonify({"mensaje": "Registro exitoso.", "usuario": usuario.to_dict()}), 201
         except EmailYaRegistradoException as e:
             return jsonify({"error": str(e)}), 409
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "Error interno del servidor."}), 500
 
     @auth_bp.post("/login")
@@ -48,7 +48,7 @@ def create_auth_blueprint(auth_service: AuthService) -> Blueprint:
             return jsonify(resultado), 200
         except CredencialesInvalidasException as e:
             return jsonify({"error": str(e)}), 401
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "Error interno del servidor."}), 500
 
     @auth_bp.post("/logout")

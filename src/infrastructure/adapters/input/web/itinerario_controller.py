@@ -63,7 +63,7 @@ def create_itinerario_blueprint(itinerario_service: ItinerarioService) -> Bluepr
             return jsonify({"error": str(e)}), 404
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "Error interno del servidor."}), 500
 
     @itinerario_bp.get("/historial")
@@ -110,7 +110,7 @@ def create_itinerario_blueprint(itinerario_service: ItinerarioService) -> Bluepr
             return jsonify({"error": str(e)}), 404
         except ValueError as e:
             return jsonify({"error": str(e)}), 400
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "Error interno del servidor."}), 500
 
     @itinerario_bp.delete("/<string:id>")
@@ -122,7 +122,7 @@ def create_itinerario_blueprint(itinerario_service: ItinerarioService) -> Bluepr
             return jsonify({"mensaje": "Itinerario eliminado correctamente."}), 200
         except ItinerarioNoEncontradoException as e:
             return jsonify({"error": str(e)}), 404
-        except Exception as e:
+        except Exception:
             return jsonify({"error": "Error interno del servidor."}), 500
 
     return itinerario_bp

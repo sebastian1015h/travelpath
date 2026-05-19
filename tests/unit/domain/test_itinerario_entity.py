@@ -31,12 +31,21 @@ def test_crea_itinerario_valido():
     assert it.activo is True
 
 
-def test_no_permite_fecha_pasada():
+def test_no_permite_fecha_muy_pasada():
     with pytest.raises(FechaPasadaException):
         _itinerario(
             fecha_hora_salida=datetime.utcnow() - timedelta(hours=1),
             fecha_hora_llegada=datetime.utcnow() + timedelta(hours=1),
         )
+
+
+def test_permite_vuelo_ultimo_momento():
+    """Salida hasta 10 min en el pasado debe ser válida."""
+    it = _itinerario(
+        fecha_hora_salida=datetime.utcnow() - timedelta(minutes=5),
+        fecha_hora_llegada=datetime.utcnow() + timedelta(hours=2),
+    )
+    assert it.activo is True
 
 
 def test_no_permite_llegada_antes_de_salida():
@@ -63,6 +72,13 @@ def test_calcula_duracion_correctamente():
 def test_es_pasado_retorna_false_para_futuro():
     it = _itinerario()
     assert it.es_pasado() is False
+
+
+def test_es_pasado_retorna_true_mas_de_10_min():
+    """Un vuelo con salida > 10 min en el pasado se considera 'pasado'."""
+    it = object.__new__(Itinerario)
+    it.fecha_hora_salida = datetime.utcnow() - timedelta(minutes=15)
+    assert it.es_pasado() is True
 
 
 def test_borrado_logico():

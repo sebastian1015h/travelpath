@@ -12,23 +12,26 @@ class SQLAlchemyUsuarioRepo(UsuarioRepositoryPort):
         self._session = session
 
     def guardar(self, usuario: Usuario) -> Usuario:
-        model = UsuarioModel(
-            id=usuario.id,
-            nombre=usuario.nombre,
-            correo=usuario.correo,
-            contrasena_hash=usuario.contrasena_hash,
-            activo=usuario.activo,
-            created_at=usuario.created_at,
-            updated_at=usuario.updated_at,
-        )
-        self._session.add(model)
-        self._session.commit()
-        self._session.refresh(model)
-        return self._to_entity(model)
+        try:
+            model = UsuarioModel(
+                id=usuario.id,
+                nombre=usuario.nombre,
+                correo=usuario.correo,
+                contrasena_hash=usuario.contrasena_hash,
+                activo=usuario.activo,
+                created_at=usuario.created_at,
+                updated_at=usuario.updated_at,
+            )
+            self._session.add(model)
+            self._session.commit()
+            self._session.refresh(model)
+            return self._to_entity(model)
+        except Exception:
+            self._session.rollback()
+            raise
 
     def obtener_por_id(self, id: str) -> Optional[Usuario]:
-        model = self._session.get(UsuarioModel, id)
-        return self._to_entity(model) if model else None
+        return self._to_entity(self._session.get(UsuarioModel, id))
 
     def obtener_por_correo(self, correo: str) -> Optional[Usuario]:
         model = (
@@ -46,18 +49,24 @@ class SQLAlchemyUsuarioRepo(UsuarioRepositoryPort):
         ) > 0
 
     def actualizar(self, usuario: Usuario) -> Usuario:
-        model = self._session.get(UsuarioModel, usuario.id)
-        if model:
-            model.nombre = usuario.nombre
-            model.correo = usuario.correo
-            model.contrasena_hash = usuario.contrasena_hash
-            model.activo = usuario.activo
-            model.updated_at = usuario.updated_at
-            self._session.commit()
-            self._session.refresh(model)
-        return self._to_entity(model)
+        try:
+            model = self._session.get(UsuarioModel, usuario.id)
+            if model:
+                model.nombre = usuario.nombre
+                model.correo = usuario.correo
+                model.contrasena_hash = usuario.contrasena_hash
+                model.activo = usuario.activo
+                model.updated_at = usuario.updated_at
+                self._session.commit()
+                self._session.refresh(model)
+            return self._to_entity(model)
+        except Exception:
+            self._session.rollback()
+            raise
 
-    def _to_entity(self, model: UsuarioModel) -> Usuario:
+    def _to_entity(self, model: UsuarioModel) -> Optional[Usuario]:
+        if not model:
+            return None
         return Usuario(
             id=model.id,
             nombre=model.nombre,

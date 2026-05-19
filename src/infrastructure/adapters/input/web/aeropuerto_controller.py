@@ -46,8 +46,23 @@ def create_aeropuerto_blueprint(
     @aeropuerto_bp.get("/mapa")
     @jwt_required()
     def datos_mapa():
+        from concurrent.futures import ThreadPoolExecutor, as_completed
         aeropuertos = cache_service.listar_todos() if cache_service else []
-        return jsonify([a.to_dict() for a in aeropuertos]), 200
+        if len(aeropuertos) < 30 and cache_service:
+            with ThreadPoolExecutor(max_workers=5) as executor:
+                futures = {executor.submit(aeropuerto_client.listar_aeropuertos, p): p for p in range(1, 6)}
+                for future in as_completed(futures):
+                    try:
+                        for a in future.result():
+                            if a.latitud and a.longitud:
+                                try:
+                                    cache_service.guardar_o_actualizar(a)
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
+            aeropuertos = cache_service.listar_todos()
+        return jsonify([a.to_dict() for a in aeropuertos if a.latitud and a.longitud]), 200
 
     @aeropuerto_bp.get("/<string:iata>")
     @jwt_required()

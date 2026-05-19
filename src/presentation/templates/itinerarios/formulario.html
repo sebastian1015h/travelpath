@@ -1,9 +1,72 @@
 {% extends "base.html" %}
-{% block title %}{% if itinerario_id %}Editar{% else %}Nuevo{% endif %} Itinerario — TravelPath{% endblock %}
+{% block title %}{% if itinerario_id %}Editar{% else %}Nuevo{% endif %} Itinerario — Extraditables.com{% endblock %}
+
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<style>
+  .mapa-seleccion-wrapper {
+    margin-bottom: 1.5rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+  .mapa-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .mapa-toolbar span {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin-right: auto;
+  }
+  .btn-modo {
+    padding: 0.4rem 1rem;
+    border-radius: 999px;
+    border: 2px solid transparent;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s;
+    background: var(--surface);
+    color: var(--text-muted);
+  }
+  .btn-modo.activo-origen {
+    background: rgba(34,197,94,0.15);
+    border-color: #22c55e;
+    color: #22c55e;
+  }
+  .btn-modo.activo-destino {
+    background: rgba(59,130,246,0.15);
+    border-color: #3b82f6;
+    color: #3b82f6;
+  }
+  .mapa-seleccion-hint {
+    font-size: 0.76rem;
+    color: var(--text-muted);
+    padding: 0.4rem 1rem;
+    border-top: 1px solid var(--border);
+    text-align: center;
+  }
+  #mapaLoading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 380px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    gap: 0.5rem;
+  }
+</style>
+{% endblock %}
 
 {% block navbar %}
 <nav class="navbar">
-  <span class="navbar-brand">Travel<span>Path</span></span>
+  <span class="navbar-brand"><span style="color:#ef4444">Extra</span><span style="color:#ffffff">ditables.com</span></span>
   <div class="navbar-right">
     <a href="/itinerarios" class="btn btn-ghost btn-sm">← Volver</a>
   </div>
@@ -22,12 +85,12 @@
 
   <form id="itinerarioForm" class="card" novalidate>
 
-    <!-- Aeropuertos -->
+    <!-- Aeropuertos (autocomplete) -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:1.25rem;">
       <div class="form-group">
         <label for="origenInput">Aeropuerto de origen</label>
         <div class="autocomplete-wrapper">
-          <input type="text" id="origenInput" placeholder="Buscar por nombre o IATA..." autocomplete="off" />
+          <input type="text" id="origenInput" placeholder="Buscar o clic en mapa..." autocomplete="off" />
           <div class="autocomplete-list" id="origenList"></div>
         </div>
         <input type="hidden" id="origenIata" />
@@ -39,7 +102,7 @@
       <div class="form-group">
         <label for="destinoInput">Aeropuerto de destino</label>
         <div class="autocomplete-wrapper">
-          <input type="text" id="destinoInput" placeholder="Buscar por nombre o IATA..." autocomplete="off" />
+          <input type="text" id="destinoInput" placeholder="Buscar o clic en mapa..." autocomplete="off" />
           <div class="autocomplete-list" id="destinoList"></div>
         </div>
         <input type="hidden" id="destinoIata" />
@@ -49,7 +112,28 @@
       </div>
     </div>
 
-    <!-- Distancia estimada entre aeropuertos -->
+    <!-- Mapa interactivo de selección -->
+    <div class="mapa-seleccion-wrapper">
+      <div class="mapa-toolbar">
+        <button type="button" id="btnModoOrigen"  class="btn-modo activo-origen" onclick="setModo('origen')">
+          🟢 Seleccionar Origen
+        </button>
+        <button type="button" id="btnModoDestino" class="btn-modo" onclick="setModo('destino')">
+          🔵 Seleccionar Destino
+        </button>
+        <span id="mapaStatus">Cargando aeropuertos...</span>
+      </div>
+      <div id="mapaLoading">
+        <span class="spinner"></span> Cargando mapa de aeropuertos...
+      </div>
+      <div id="mapaSeleccion" style="display:none;"></div>
+      <div class="mapa-seleccion-hint">
+        Haz clic en un punto rojo del mapa para seleccionarlo como origen o destino según el modo activo.
+        También puedes buscar directamente en los campos de texto.
+      </div>
+    </div>
+
+    <!-- Distancia estimada -->
     <div id="distanciaInfo" style="display:none;margin-bottom:1rem;padding:0.65rem 1rem;background:var(--surface-2);border:1px solid var(--border);border-radius:8px;font-size:0.88rem;color:var(--text-muted);">
       📏 Distancia: <strong id="distanciaKm">—</strong> km &nbsp;·&nbsp;
       ⏱ Duración estimada de vuelo: <strong id="duracionEstimada">—</strong>
@@ -73,7 +157,7 @@
       </div>
     </div>
 
-    <!-- Duración real (desde fechas seleccionadas) -->
+    <!-- Duración real -->
     <div id="durationDisplay" class="duration-display" style="margin-bottom:1.25rem;"></div>
 
     <div class="form-group">
@@ -97,7 +181,9 @@
   requireAuth();
 
   const ITINERARIO_ID = '{{ itinerario_id if itinerario_id else "" }}';
-  let misItinerarios = [];
+  let misItinerarios  = [];
+  let aeropuertosMapa = [];
+  let modoSeleccion   = 'origen';
 
   // ── Haversine ────────────────────────────────────────────────────────────
   function haversineKm(lat1, lon1, lat2, lon2) {
@@ -110,7 +196,6 @@
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  // Velocidad crucero promedio en km/h + 30 min de rodaje/despegue/aterrizaje
   const VELOCIDAD_KMH = 870;
   const EXTRA_MIN     = 30;
 
@@ -122,36 +207,158 @@
     return `${Math.floor(minutos / 60)}h ${minutos % 60}m`;
   }
 
-  // ── Recalcular todo cuando cambia origen, destino o salida ──────────────
+  // ── Modo de selección del mapa ───────────────────────────────────────────
+  function setModo(modo) {
+    modoSeleccion = modo;
+    document.getElementById('btnModoOrigen').className  =
+      'btn-modo' + (modo === 'origen'  ? ' activo-origen'  : '');
+    document.getElementById('btnModoDestino').className =
+      'btn-modo' + (modo === 'destino' ? ' activo-destino' : '');
+  }
+
+  // ── Renderizar mapa ──────────────────────────────────────────────────────
+  function renderizarMapaSeleccion() {
+    const origenIata  = document.getElementById('origenIata').value;
+    const destinoIata = document.getElementById('destinoIata').value;
+
+    const lats = [], lons = [], textos = [], colores = [], tamanos = [], iatas = [];
+
+    aeropuertosMapa.forEach(a => {
+      if (!a.latitud || !a.longitud) return;
+      lats.push(a.latitud);
+      lons.push(a.longitud);
+      textos.push(`<b>${a.iata}</b><br>${a.nombre}<br>${a.ciudad}, ${a.pais}`);
+      iatas.push(a.iata);
+
+      if (a.iata === origenIata) {
+        colores.push('#22c55e');
+        tamanos.push(12);
+      } else if (a.iata === destinoIata) {
+        colores.push('#3b82f6');
+        tamanos.push(12);
+      } else {
+        colores.push('#ef4444');
+        tamanos.push(6);
+      }
+    });
+
+    const trace = {
+      type: 'scattergeo',
+      lat: lats,
+      lon: lons,
+      text: textos,
+      mode: 'markers',
+      marker: {
+        size: tamanos,
+        color: colores,
+        opacity: 0.85,
+        line: { width: 0 },
+      },
+      hoverinfo: 'text',
+      hovertemplate: '%{text}<extra></extra>',
+      customdata: iatas,
+    };
+
+    const layout = {
+      geo: {
+        projection: { type: 'natural earth' },
+        showland: true,
+        landcolor: '#1e293b',
+        showocean: true,
+        oceancolor: '#0f172a',
+        showcountries: true,
+        countrycolor: '#334155',
+        showcoastlines: true,
+        coastlinecolor: '#334155',
+        bgcolor: 'transparent',
+      },
+      paper_bgcolor: 'transparent',
+      plot_bgcolor:  'transparent',
+      margin: { t: 8, b: 8, l: 0, r: 0 },
+      height: 380,
+    };
+
+    const config = { displayModeBar: false, responsive: true };
+
+    if (!document.getElementById('mapaSeleccion')._plotlyInit) {
+      Plotly.newPlot('mapaSeleccion', [trace], layout, config);
+      document.getElementById('mapaSeleccion')._plotlyInit = true;
+      document.getElementById('mapaSeleccion').on('plotly_click', data => {
+        if (!data.points.length) return;
+        const pt   = data.points[0];
+        const iata = pt.customdata;
+        const a    = aeropuertosMapa.find(x => x.iata === iata);
+        if (a) seleccionarDesdeMapaAeropuerto(a);
+      });
+    } else {
+      Plotly.react('mapaSeleccion', [trace], layout, config);
+    }
+  }
+
+  function seleccionarDesdeMapaAeropuerto(a) {
+    if (modoSeleccion === 'origen') {
+      document.getElementById('origenInput').value = `${a.iata} — ${a.nombre}`;
+      document.getElementById('origenIata').value  = a.iata;
+      document.getElementById('origenLat').value   = a.latitud  ?? '';
+      document.getElementById('origenLon').value   = a.longitud ?? '';
+      document.getElementById('origen-err').classList.remove('visible');
+      document.getElementById('origenInput').classList.remove('error');
+      setModo('destino'); // avanza al siguiente paso
+    } else {
+      document.getElementById('destinoInput').value = `${a.iata} — ${a.nombre}`;
+      document.getElementById('destinoIata').value  = a.iata;
+      document.getElementById('destinoLat').value   = a.latitud  ?? '';
+      document.getElementById('destinoLon').value   = a.longitud ?? '';
+      document.getElementById('destino-err').classList.remove('visible');
+      document.getElementById('destinoInput').classList.remove('error');
+    }
+    recalcular();
+    renderizarMapaSeleccion();
+  }
+
+  // ── Cargar aeropuertos del mapa ──────────────────────────────────────────
+  async function cargarMapaAeropuertos() {
+    try {
+      const res = await apiFetch('/api/aeropuertos/mapa');
+      if (!res.ok) throw new Error('No se pudo cargar');
+      aeropuertosMapa = await res.json();
+      document.getElementById('mapaLoading').style.display    = 'none';
+      document.getElementById('mapaSeleccion').style.display  = 'block';
+      document.getElementById('mapaStatus').textContent =
+        `${aeropuertosMapa.length} aeropuertos disponibles`;
+      renderizarMapaSeleccion();
+    } catch (e) {
+      document.getElementById('mapaLoading').textContent =
+        'No se pudo cargar el mapa. Usa la búsqueda de texto.';
+    }
+  }
+
+  // ── Recalcular distancia y duración ─────────────────────────────────────
   function recalcular() {
     const lat1 = parseFloat(document.getElementById('origenLat').value);
     const lon1 = parseFloat(document.getElementById('origenLon').value);
     const lat2 = parseFloat(document.getElementById('destinoLat').value);
     const lon2 = parseFloat(document.getElementById('destinoLon').value);
     const salidaVal = document.getElementById('salida').value;
-
     const tieneCoords = !isNaN(lat1) && !isNaN(lon1) && !isNaN(lat2) && !isNaN(lon2);
 
     if (tieneCoords) {
       const distKm = Math.round(haversineKm(lat1, lon1, lat2, lon2));
       const mins   = minutosVuelo(distKm);
-      document.getElementById('distanciaKm').textContent     = distKm.toLocaleString();
-      document.getElementById('duracionEstimada').textContent = fmtDuracion(mins);
-      document.getElementById('distanciaInfo').style.display = 'block';
+      document.getElementById('distanciaKm').textContent      = distKm.toLocaleString();
+      document.getElementById('duracionEstimada').textContent  = fmtDuracion(mins);
+      document.getElementById('distanciaInfo').style.display   = 'block';
 
-      // Auto-rellenar llegada si hay hora de salida
       if (salidaVal) {
         const salidaDate  = new Date(salidaVal);
         const llegadaDate = new Date(salidaDate.getTime() + mins * 60000);
-        const llegadaStr  = llegadaDate.toISOString().slice(0, 16);
-        document.getElementById('llegada').value = llegadaStr;
+        document.getElementById('llegada').value = llegadaDate.toISOString().slice(0, 16);
         document.getElementById('llegadaAutoTag').style.display = 'inline';
         mostrarDuracionReal();
         checkOverlap();
       }
     } else {
       document.getElementById('distanciaInfo').style.display = 'none';
-      // Si no hay coords pero sí llegada manual, mostrar duración igual
       mostrarDuracionReal();
       checkOverlap();
     }
@@ -182,9 +389,15 @@
     alertEl.classList.toggle('visible', overlap);
   }
 
-  // ── Autocomplete con coordenadas ─────────────────────────────────────────
-  setupAutocomplete('origenInput',  'origenList',  'origenIata',  'origenLat',  'origenLon',  recalcular);
-  setupAutocomplete('destinoInput', 'destinoList', 'destinoIata', 'destinoLat', 'destinoLon', recalcular);
+  // ── Autocomplete ─────────────────────────────────────────────────────────
+  setupAutocomplete('origenInput',  'origenList',  'origenIata',  'origenLat',  'origenLon',  () => {
+    recalcular();
+    renderizarMapaSeleccion();
+  });
+  setupAutocomplete('destinoInput', 'destinoList', 'destinoIata', 'destinoLat', 'destinoLon', () => {
+    recalcular();
+    renderizarMapaSeleccion();
+  });
 
   document.getElementById('salida').addEventListener('change', recalcular);
   document.getElementById('llegada').addEventListener('change', () => {
@@ -198,12 +411,15 @@
     const res = await apiFetch('/api/itinerarios');
     if (res.ok) misItinerarios = await res.json();
 
+    // Cargar mapa en paralelo con el resto del init
+    cargarMapaAeropuertos();
+
     if (ITINERARIO_ID) {
       const r = await apiFetch(`/api/itinerarios/${ITINERARIO_ID}`);
       if (r.ok) {
         const it = await r.json();
-        const o = it.aeropuerto_origen;
-        const d = it.aeropuerto_destino;
+        const o  = it.aeropuerto_origen;
+        const d  = it.aeropuerto_destino;
 
         document.getElementById('origenInput').value  = `${o.iata} — ${o.nombre}`;
         document.getElementById('origenIata').value   = o.iata;
@@ -215,9 +431,9 @@
         document.getElementById('destinoLat').value   = d.latitud  || '';
         document.getElementById('destinoLon').value   = d.longitud || '';
 
-        document.getElementById('salida').value   = it.fecha_hora_salida.slice(0, 16);
-        document.getElementById('llegada').value  = it.fecha_hora_llegada.slice(0, 16);
-        document.getElementById('notas').value    = it.notas || '';
+        document.getElementById('salida').value  = it.fecha_hora_salida.slice(0, 16);
+        document.getElementById('llegada').value = it.fecha_hora_llegada.slice(0, 16);
+        document.getElementById('notas').value   = it.notas || '';
         recalcular();
       }
     }
@@ -245,8 +461,8 @@
     if (!valid) return;
 
     const btn = document.getElementById('submitBtn');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Guardando...';
+    btn.disabled   = true;
+    btn.innerHTML  = '<span class="spinner"></span> Guardando...';
     document.getElementById('alert').classList.remove('visible');
 
     try {
@@ -276,7 +492,7 @@
       document.getElementById('alert').textContent = 'Error de conexión.';
       document.getElementById('alert').classList.add('visible');
     } finally {
-      btn.disabled = false;
+      btn.disabled  = false;
       btn.innerHTML = ITINERARIO_ID ? 'Guardar Cambios' : 'Crear Itinerario';
     }
   });

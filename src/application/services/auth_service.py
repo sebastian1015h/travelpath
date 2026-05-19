@@ -15,13 +15,11 @@ from src.infrastructure.security.password_handler import hashear, verificar
 
 logger = logging.getLogger(__name__)
 
-TOKEN_BLACKLIST: set = set()
-
-
 class AuthService:
 
-    def __init__(self, usuario_repo: UsuarioRepositoryPort):
+    def __init__(self, usuario_repo: UsuarioRepositoryPort, token_blacklist=None):
         self._repo = usuario_repo
+        self._blacklist = token_blacklist
 
     def registrar(self, dto: RegisterDTO) -> UsuarioResponseDTO:
         if self._repo.existe_por_correo(dto.correo):
@@ -58,10 +56,8 @@ class AuthService:
         }
 
     def logout(self, jti: str) -> None:
-        TOKEN_BLACKLIST.add(jti)
-
-    def es_token_revocado(self, jti: str) -> bool:
-        return jti in TOKEN_BLACKLIST
+        if self._blacklist:
+            self._blacklist.revocar(jti)
 
     def obtener_por_id(self, usuario_id: str) -> UsuarioResponseDTO:
         usuario = self._repo.obtener_por_id(usuario_id)

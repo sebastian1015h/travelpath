@@ -119,6 +119,13 @@ class ItinerarioService:
         return dict(sorted(historial.items(), reverse=True))
 
     def _obtener_aeropuerto(self, iata: str) -> AeropuertoDTO:
+        if self._aeropuerto_cache_repo:
+            try:
+                cached = self._aeropuerto_cache_repo.obtener_por_iata(iata)
+                if cached:
+                    return cached
+            except Exception:
+                pass
         aeropuerto = self._aeropuerto_client.buscar_por_iata(iata)
         if not aeropuerto:
             raise AeropuertoNoEncontradoException(
@@ -139,7 +146,6 @@ class ItinerarioService:
         return self._to_dto(itinerario, origen, destino)
 
     def _resolver_aeropuerto(self, iata: str) -> AeropuertoDTO:
-        # 1. Buscar en caché local (tiene coordenadas del seed)
         if self._aeropuerto_cache_repo:
             try:
                 cached = self._aeropuerto_cache_repo.obtener_por_iata(iata)
@@ -147,7 +153,6 @@ class ItinerarioService:
                     return cached
             except Exception:
                 pass
-        # 2. Fallback a la API externa
         try:
             resultado = self._aeropuerto_client.buscar_por_iata(iata)
             if resultado:
