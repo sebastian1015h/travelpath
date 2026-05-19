@@ -24,15 +24,27 @@ function setupAutocomplete(inputId, listId, hiddenIataId, hiddenLatId, hiddenLon
 }
 
 async function buscarAeropuerto(query, list, input, hidden, hidLat, hidLon, onSelect) {
+  list.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted);pointer-events:none;">Buscando...</div>';
+  list.classList.add('open');
+
   try {
     const res = await apiFetch(`/api/aeropuertos?nombre=${encodeURIComponent(query)}`);
-    if (!res.ok) { list.classList.remove('open'); return; }
+
+    if (!res.ok) {
+      list.innerHTML = '<div class="autocomplete-item" style="color:#ef4444;pointer-events:none;">Error al conectar con el servidor</div>';
+      return;
+    }
+
     const data = await res.json();
+
+    if (data.error) {
+      list.innerHTML = `<div class="autocomplete-item" style="color:#ef4444;pointer-events:none;">${data.error}</div>`;
+      return;
+    }
 
     list.innerHTML = '';
     if (!data.length) {
-      list.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted);">Sin resultados</div>';
-      list.classList.add('open');
+      list.innerHTML = '<div class="autocomplete-item" style="color:var(--text-muted);pointer-events:none;">Sin resultados para "' + query + '"</div>';
       return;
     }
 
@@ -51,9 +63,7 @@ async function buscarAeropuerto(query, list, input, hidden, hidLat, hidLon, onSe
       });
       list.appendChild(item);
     });
-
-    list.classList.add('open');
   } catch {
-    list.classList.remove('open');
+    list.innerHTML = '<div class="autocomplete-item" style="color:#ef4444;pointer-events:none;">Sin conexión con el servidor</div>';
   }
 }

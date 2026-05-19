@@ -16,9 +16,13 @@ TIMEOUT        = 10.0
 class ApiColombiaAdapter(AeropuertoClientPort):
 
     def buscar_por_nombre(self, nombre: str) -> List[AeropuertoDTO]:
+        q = nombre.strip()
+        q_upper = q.upper()
+
+        # 1. AirportGap — búsqueda global por texto
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
-                res = client.get(AIRPORTGAP_URL, params={"q": nombre})
+                res = client.get(AIRPORTGAP_URL, params={"q": q})
             res.raise_for_status()
             data = res.json().get("data", [])
             resultados = [self._mapear_gap(a) for a in data if self._iata_valida(a)]
@@ -27,19 +31,35 @@ class ApiColombiaAdapter(AeropuertoClientPort):
         except Exception as ex:
             logger.warning("AirportGap buscar_por_nombre falló: %s", ex)
 
+        # 2. Si parece código IATA (3 letras), buscar directamente por IATA
+        if len(q_upper) == 3 and q_upper.isalpha():
+            try:
+                resultado = self.buscar_por_iata(q_upper)
+                if resultado:
+                    return [resultado]
+            except Exception:
+                pass
+
+        # 3. Buscar dentro de todos los aeropuertos colombianos (filtro local)
         try:
-            with httpx.Client(timeout=TIMEOUT) as client:
-                res = client.get(f"{COLOMBIA_URL}/Airport/search/{nombre}")
-            res.raise_for_status()
-            data = res.json()
-            return [self._mapear_colombia(a) for a in data if a.get("iataCode")][:10]
+            colombianos = self.listar_colombia()
+            encontrados = [
+                a for a in colombianos
+                if q_upper in a.iata.upper()
+                or q_upper in a.nombre.upper()
+                or q_upper in a.ciudad.upper()
+            ]
+            if encontrados:
+                return encontrados[:10]
         except Exception as ex:
-            logger.warning("API Colombia buscar_por_nombre falló: %s", ex)
+            logger.warning("Búsqueda local Colombia falló: %s", ex)
 
         return []
 
     def buscar_por_iata(self, iata: str) -> Optional[AeropuertoDTO]:
         iata = iata.upper()
+
+        # 1. AirportGap — búsqueda directa por IATA
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
                 res = client.get(f"{AIRPORTGAP_URL}/{iata}")
@@ -50,13 +70,12 @@ class ApiColombiaAdapter(AeropuertoClientPort):
         except Exception as ex:
             logger.warning("AirportGap buscar_por_iata %s falló: %s", iata, ex)
 
+        # 2. API Colombia — recorre la lista completa y filtra por IATA
         try:
-            with httpx.Client(timeout=TIMEOUT) as client:
-                res = client.get(f"{COLOMBIA_URL}/Airport")
-            res.raise_for_status()
-            for a in res.json():
-                if a.get("iataCode", "").upper() == iata:
-                    return self._mapear_colombia(a)
+            colombianos = self.listar_colombia()
+            for a in colombianos:
+                if a.iata.upper() == iata:
+                    return a
         except Exception as ex:
             logger.warning("API Colombia buscar_por_iata %s falló: %s", iata, ex)
 

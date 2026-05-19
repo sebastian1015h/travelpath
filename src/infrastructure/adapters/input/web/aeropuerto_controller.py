@@ -13,7 +13,10 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
         nombre = request.args.get("nombre", "").strip()
         if not nombre or len(nombre) < 2:
             return jsonify({"error": "Ingresa al menos 2 caracteres."}), 400
-        resultados = aeropuerto_client.buscar_por_nombre(nombre)
+        try:
+            resultados = aeropuerto_client.buscar_por_nombre(nombre)
+        except Exception:
+            return jsonify({"error": "No se pudo conectar con el servicio de aeropuertos."}), 503
         return jsonify([r.to_dict() for r in resultados[:12]]), 200
 
     @aeropuerto_bp.get("/mapa")
