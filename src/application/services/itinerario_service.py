@@ -111,12 +111,14 @@ class ItinerarioService:
         return dict(sorted(historial.items(), reverse=True))
 
     def _obtener_aeropuerto(self, iata: str) -> AeropuertoDTO:
-        aeropuerto = self._aeropuerto_client.buscar_por_iata(iata)
-        if not aeropuerto:
-            raise AeropuertoNoEncontradoException(
-                f"No se encontró el aeropuerto con código IATA '{iata}'."
-            )
-        return aeropuerto
+        try:
+            aeropuerto = self._aeropuerto_client.buscar_por_iata(iata)
+            if aeropuerto:
+                return aeropuerto
+        except Exception:
+            pass
+        # Si la API externa falla, devolvemos un DTO mínimo para no bloquear la creación
+        return AeropuertoDTO(iata=iata.upper(), nombre=iata.upper(), ciudad="", pais="")
 
     def _resolver_aeropuerto(self, iata: str) -> AeropuertoDTO:
         try:

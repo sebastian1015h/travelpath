@@ -3,7 +3,6 @@ from datetime import datetime, timedelta
 
 from src.domain.entities.itinerario import Itinerario
 from src.domain.exceptions.domain_exceptions import (
-    FechaPasadaException,
     FechaInvalidaException,
     OrigenIgualDestinoException,
 )
@@ -11,6 +10,10 @@ from src.domain.exceptions.domain_exceptions import (
 
 def _futuro(horas=2):
     return datetime.utcnow() + timedelta(hours=horas)
+
+
+def _pasado(horas=2):
+    return datetime.utcnow() - timedelta(hours=horas)
 
 
 def _itinerario(**kwargs):
@@ -31,19 +34,18 @@ def test_crea_itinerario_valido():
     assert it.activo is True
 
 
-def test_no_permite_fecha_muy_pasada():
-    with pytest.raises(FechaPasadaException):
-        _itinerario(
-            fecha_hora_salida=datetime.utcnow() - timedelta(hours=1),
-            fecha_hora_llegada=datetime.utcnow() + timedelta(hours=1),
-        )
-
-
-def test_permite_vuelo_ultimo_momento():
-    """Salida hasta 10 min en el pasado debe ser válida."""
+def test_permite_vuelo_en_el_pasado():
     it = _itinerario(
-        fecha_hora_salida=datetime.utcnow() - timedelta(minutes=5),
-        fecha_hora_llegada=datetime.utcnow() + timedelta(hours=2),
+        fecha_hora_salida=_pasado(5),
+        fecha_hora_llegada=_pasado(3),
+    )
+    assert it.activo is True
+
+
+def test_permite_vuelo_hoy():
+    it = _itinerario(
+        fecha_hora_salida=_pasado(1),
+        fecha_hora_llegada=_futuro(1),
     )
     assert it.activo is True
 
@@ -74,10 +76,9 @@ def test_es_pasado_retorna_false_para_futuro():
     assert it.es_pasado() is False
 
 
-def test_es_pasado_retorna_true_mas_de_10_min():
-    """Un vuelo con salida > 10 min en el pasado se considera 'pasado'."""
+def test_es_pasado_retorna_true_para_pasado():
     it = object.__new__(Itinerario)
-    it.fecha_hora_salida = datetime.utcnow() - timedelta(minutes=15)
+    it.fecha_hora_salida = datetime.utcnow() - timedelta(hours=1)
     assert it.es_pasado() is True
 
 

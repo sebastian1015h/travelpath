@@ -1,9 +1,8 @@
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from uuid import uuid4
 
 from src.domain.exceptions.domain_exceptions import (
-    FechaPasadaException,
     FechaInvalidaException,
     OrigenIgualDestinoException,
 )
@@ -30,9 +29,6 @@ class Itinerario:
         self.validar_origen_distinto()
 
     def validar_fechas(self):
-        ahora = datetime.utcnow()
-        if self.fecha_hora_salida < ahora - timedelta(minutes=10):
-            raise FechaPasadaException("La fecha de salida no puede ser más de 10 minutos en el pasado.")
         if self.fecha_hora_llegada <= self.fecha_hora_salida:
             raise FechaInvalidaException("La llegada debe ser posterior a la salida.")
 
@@ -48,7 +44,7 @@ class Itinerario:
         return int(delta.total_seconds() / 60)
 
     def es_pasado(self) -> bool:
-        return self.fecha_hora_salida < datetime.utcnow() - timedelta(minutes=10)
+        return self.fecha_hora_salida < datetime.utcnow()
 
     def desactivar(self):
         """Borrado lógico."""

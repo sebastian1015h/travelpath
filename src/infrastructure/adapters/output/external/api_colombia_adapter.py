@@ -19,7 +19,17 @@ class ApiColombiaAdapter(AeropuertoClientPort):
         q = nombre.strip()
         q_upper = q.upper()
 
-        # 1. AirportGap — búsqueda global por texto
+        # 1. Si son exactamente 3 letras, buscar primero por IATA directo
+        #    (evita que "MDE" devuelva aeropuertos de Papua Nueva Guinea)
+        if len(q_upper) == 3 and q_upper.isalpha():
+            try:
+                resultado = self.buscar_por_iata(q_upper)
+                if resultado:
+                    return [resultado]
+            except Exception:
+                pass
+
+        # 2. AirportGap — búsqueda global por texto
         try:
             with httpx.Client(timeout=TIMEOUT) as client:
                 res = client.get(AIRPORTGAP_URL, params={"q": q})
@@ -30,15 +40,6 @@ class ApiColombiaAdapter(AeropuertoClientPort):
                 return resultados[:10]
         except Exception as ex:
             logger.warning("AirportGap buscar_por_nombre falló: %s", ex)
-
-        # 2. Si parece código IATA (3 letras), buscar directamente por IATA
-        if len(q_upper) == 3 and q_upper.isalpha():
-            try:
-                resultado = self.buscar_por_iata(q_upper)
-                if resultado:
-                    return [resultado]
-            except Exception:
-                pass
 
         # 3. Buscar dentro de todos los aeropuertos colombianos (filtro local)
         try:
