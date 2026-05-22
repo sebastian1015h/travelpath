@@ -10,10 +10,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = Field(default="cambia_esto_en_produccion", alias="JWT_SECRET_KEY")
     flask_debug: bool = Field(default=True, alias="FLASK_DEBUG")
     frontend_origin: str = Field(default="*", alias="FRONTEND_ORIGIN")
-<<<<<<< HEAD
-=======
     airport_service_url: str = Field(default="http://localhost:8001", alias="AIRPORT_SERVICE_URL")
->>>>>>> origin/master
 
     model_config = {"env_file": ".env", "populate_by_name": True}
 
