@@ -1,0 +1,44 @@
+version: "3.9"
+
+services:
+
+  airport-service:
+    build:
+      context: ./airport-service
+    image: travelpath-airport:local
+    container_name: travelpath_airport
+    ports:
+      - "8001:8001"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  itinerary-service:
+    build:
+      context: .
+      target: runtime
+    image: travelpath-itinerary:local
+    container_name: travelpath_itinerary
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      - FLASK_DEBUG=false
+      - AIRPORT_SERVICE_URL=http://airport-service:8001
+    depends_on:
+      airport-service:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

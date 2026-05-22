@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: travelpath
+    runtime: docker           # Render usa el Dockerfile en lugar del buildpack Python
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: DATABASE_URL
+        sync: false           # ingresar manualmente en el dashboard de Render
+      - key: FRONTEND_ORIGIN
+        sync: false           # ingresar manualmente (ej. https://travelpath.onrender.com)

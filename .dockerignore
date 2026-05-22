@@ -1,0 +1,42 @@
+# Entorno virtual local — las dependencias se instalan dentro del contenedor
+venv/
+.venv/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Variables de entorno — nunca deben entrar a la imagen
+.env
+.env.*
+!.env.example
+
+# Git y herramientas de desarrollo
+.git/
+.gitignore
+.github/
+
+# Base de datos SQLite local
+*.db
+*.sqlite
+*.sqlite3
+
+# Herramientas de calidad de código
+.sonarcloud.properties
+sonar-project.properties
+.coverage
+coverage.xml
+htmlcov/
+
+# Tests — no necesarios en producción
+tests/
+
+# Documentación y archivos del IDE
+*.md
+.vscode/
+.idea/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db

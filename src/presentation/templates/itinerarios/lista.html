@@ -1,0 +1,285 @@
+{% extends "base.html" %}
+{% block title %}Mis Itinerarios — Extraditables.com{% endblock %}
+
+{% block head %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+{% endblock %}
+
+{% block navbar %}
+<nav class="navbar">
+  <span class="navbar-brand"><span style="color:#ef4444">Extra</span><span style="color:#ffffff">ditables.com</span></span>
+  <div class="navbar-right">
+    <span class="navbar-user" id="navUser"></span>
+    <button class="btn btn-ghost btn-sm" id="logoutBtn">Salir</button>
+  </div>
+</nav>
+{% endblock %}
+
+{% block content %}
+<div class="page-container">
+
+  <div class="page-header">
+    <h1 class="page-title">Mis Itinerarios</h1>
+    <div class="view-toggle">
+      <button id="btnVista-lista" class="active" onclick="setVista('lista')">☰ Lista</button>
+      <button id="btnVista-mapa"  onclick="setVista('mapa')">🗺 Mapa general</button>
+    </div>
+  </div>
+
+  <!-- Filtros (solo en vista lista) -->
+  <div class="filters" id="filtrosPanel">
+    <input type="number" id="filtroAnio"    placeholder="Año" min="2020" max="2099" style="max-width:110px;" />
+    <input type="text"   id="filtroDestino" placeholder="Destino (IATA o ciudad)" style="max-width:210px;" />
+    <button class="btn btn-ghost btn-sm" id="limpiarFiltros">Limpiar</button>
+  </div>
+
+  <div id="alert" class="alert alert-error"></div>
+
+  <!-- Vista lista -->
+  <div id="vistaLista">
+    <div class="itinerarios-grid" id="grid"></div>
+    <div id="emptyState" class="empty-state" style="display:none;">
+      <svg width="56" height="56" fill="none" stroke="currentColor" stroke-width="1.2" viewBox="0 0 24 24" style="opacity:.25;margin-bottom:0.5rem;">
+        <path d="M3.75 3.75v16.5m16.5-16.5v16.5M3.75 12h16.5" stroke-linecap="round"/>
+      </svg>
+      <p>Aún no tienes itinerarios. ¡Crea el primero!</p>
+    </div>
+  </div>
+
+  <!-- Vista mapa general -->
+  <div id="vistaMapa" style="display:none;">
+    <div class="mapa-general-container">
+      <div id="mapaGeneral" style="width:100%;height:560px;"></div>
+    </div>
+    <div id="mapaLeyenda" style="margin-top:1rem;display:flex;gap:1.25rem;flex-wrap:wrap;font-size:0.85rem;color:var(--text-muted);">
+      <span><span style="color:#3B82F6;">●</span> Próximo</span>
+      <span><span style="color:#10B981;">●</span> Hoy</span>
+      <span><span style="color:#6B7280;">●</span> Pasado</span>
+    </div>
+  </div>
+
+</div>
+
+<a href="/itinerarios/nuevo" class="fab" title="Nuevo itinerario">＋</a>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/itinerarios.js') }}"></script>
+<script src="{{ url_for('static', filename='js/mapa.js') }}"></script>
+<script>
+  requireAuth();
+
+  const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+  document.getElementById('navUser').textContent = usuario.nombre || '';
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    showModal({
+      title: '¿Cerrar sesión?',
+      body: 'Se eliminará tu sesión activa en este dispositivo.',
+      confirmText: 'Salir',
+      icon: '🚪',
+      onConfirm: async () => {
+        try { await apiFetch('/auth/logout', { method: 'POST' }); } catch {}
+        clearAuth();
+        window.location.href = '/login';
+      }
+    });
+  });
+
+  let todosItinerarios = [];
+  let vistaActual = 'lista';
+  let mapaRenderizado = false;
+
+  // ── Cargar datos ──────────────────────────────────────────────────────────
+  async function cargar() {
+    const res = await apiFetch('/api/itinerarios');
+    if (!res.ok) {
+      document.getElementById('alert').textContent = 'Error al cargar itinerarios.';
+      document.getElementById('alert').classList.add('visible');
+      return;
+    }
+    todosItinerarios = await res.json();
+    renderizar(todosItinerarios);
+  }
+
+  // ── Vista toggle ──────────────────────────────────────────────────────────
+  function setVista(v) {
+    vistaActual = v;
+    document.getElementById('vistaLista').style.display = v === 'lista' ? 'block' : 'none';
+    document.getElementById('vistaMapa').style.display  = v === 'mapa'  ? 'block' : 'none';
+    document.getElementById('filtrosPanel').style.display = v === 'lista' ? 'flex' : 'none';
+    document.getElementById('btnVista-lista').classList.toggle('active', v === 'lista');
+    document.getElementById('btnVista-mapa').classList.toggle('active',  v === 'mapa');
+
+    if (v === 'mapa' && !mapaRenderizado) {
+      renderizarMapaGeneral(todosItinerarios);
+      mapaRenderizado = true;
+    }
+  }
+
+  // ── Renderizar tarjetas ───────────────────────────────────────────────────
+  function renderizar(lista) {
+    const grid  = document.getElementById('grid');
+    const empty = document.getElementById('emptyState');
+    grid.innerHTML = '';
+    if (!lista.length) { empty.style.display = 'block'; return; }
+    empty.style.display = 'none';
+    lista.forEach(it => grid.appendChild(crearTarjeta(it)));
+  }
+
+  function estadoBadge(it) {
+    const hoy   = new Date().toDateString();
+    const salida = new Date(it.fecha_hora_salida);
+    if (salida.toDateString() === hoy) return '<span class="badge badge-hoy">Hoy</span>';
+    if (salida > new Date())           return '<span class="badge badge-proximo">Próximo</span>';
+    return '<span class="badge badge-pasado">Pasado</span>';
+  }
+
+  function crearTarjeta(it) {
+    const card = document.createElement('div');
+    card.className = 'card itinerario-card fade-in';
+
+    const salida  = new Date(it.fecha_hora_salida).toLocaleString('es-CO',  { dateStyle:'medium', timeStyle:'short' });
+    const llegada = new Date(it.fecha_hora_llegada).toLocaleString('es-CO', { dateStyle:'medium', timeStyle:'short' });
+    const h = Math.floor(it.duracion_minutos / 60);
+    const m = it.duracion_minutos % 60;
+    const esPasado = new Date(it.fecha_hora_salida) < new Date();
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:0.5rem;">
+        <div class="route">
+          <span class="iata-badge">${it.aeropuerto_origen?.iata  || '?'}</span>
+          <span class="route-arrow">→</span>
+          <span class="iata-badge">${it.aeropuerto_destino?.iata || '?'}</span>
+        </div>
+        ${estadoBadge(it)}
+      </div>
+      <div class="meta" style="font-size:0.8rem;">
+        ${it.aeropuerto_origen?.ciudad || ''} → ${it.aeropuerto_destino?.ciudad || ''}
+      </div>
+      <div class="meta">✈ Salida: <strong>${salida}</strong></div>
+      <div class="meta">🛬 Llegada: <strong>${llegada}</strong></div>
+      <div class="meta">⏱ Duración: <strong>${h}h ${String(m).padStart(2,'0')}m</strong></div>
+      ${it.notas ? `<div class="meta" style="font-style:italic;color:var(--text-muted);">"${it.notas}"</div>` : ''}
+      <div class="card-actions">
+        <a href="/itinerarios/${it.id}" class="btn btn-ghost btn-sm">Ver detalle</a>
+        ${!esPasado ? `<a href="/itinerarios/${it.id}/editar" class="btn btn-primary btn-sm">Editar</a>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="confirmarEliminar('${it.id}', '${(it.aeropuerto_origen?.iata||'?')} → ${(it.aeropuerto_destino?.iata||'?')}')">Eliminar</button>
+      </div>`;
+    return card;
+  }
+
+  function confirmarEliminar(id, ruta) {
+    showModal({
+      title: 'Eliminar itinerario',
+      body: `¿Seguro que quieres eliminar el vuelo ${ruta}? Esta acción no se puede deshacer.`,
+      confirmText: 'Eliminar',
+      icon: '🗑️',
+      onConfirm: async () => {
+        const res = await apiFetch(`/api/itinerarios/${id}`, { method: 'DELETE' });
+        if (res.ok) {
+          todosItinerarios = todosItinerarios.filter(i => i.id !== id);
+          mapaRenderizado  = false;
+          renderizar(filtrar());
+        }
+      }
+    });
+  }
+
+  // ── Filtros ───────────────────────────────────────────────────────────────
+  function filtrar() {
+    const anio    = document.getElementById('filtroAnio').value;
+    const destino = document.getElementById('filtroDestino').value.trim().toUpperCase();
+    return todosItinerarios.filter(it => {
+      const matchAnio = !anio || new Date(it.fecha_hora_salida).getFullYear() == anio;
+      const matchDest = !destino ||
+        (it.aeropuerto_destino?.iata   || '').toUpperCase().includes(destino) ||
+        (it.aeropuerto_destino?.ciudad || '').toUpperCase().includes(destino);
+      return matchAnio && matchDest;
+    });
+  }
+
+  document.getElementById('filtroAnio').addEventListener('input',    () => renderizar(filtrar()));
+  document.getElementById('filtroDestino').addEventListener('input', () => renderizar(filtrar()));
+  document.getElementById('limpiarFiltros').addEventListener('click', () => {
+    document.getElementById('filtroAnio').value    = '';
+    document.getElementById('filtroDestino').value = '';
+    renderizar(todosItinerarios);
+  });
+
+  // ── Mapa general ──────────────────────────────────────────────────────────
+  function renderizarMapaGeneral(itinerarios) {
+    const conCoords = itinerarios.filter(it =>
+      it.aeropuerto_origen?.latitud  && it.aeropuerto_origen?.longitud &&
+      it.aeropuerto_destino?.latitud && it.aeropuerto_destino?.longitud
+    );
+
+    if (!conCoords.length) {
+      document.getElementById('mapaGeneral').innerHTML =
+        '<p style="text-align:center;padding:4rem;color:var(--text-muted);">No hay itinerarios con coordenadas para mostrar.</p>';
+      return;
+    }
+
+    const trazas = [];
+    const hoy    = new Date();
+
+    conCoords.forEach(it => {
+      const o = it.aeropuerto_origen;
+      const d = it.aeropuerto_destino;
+      const salida = new Date(it.fecha_hora_salida);
+
+      let color;
+      if (salida.toDateString() === hoy.toDateString()) color = '#10B981';
+      else if (salida > hoy) color = '#3B82F6';
+      else color = '#4B5563';
+
+      const gc = granCirculo(o.latitud, o.longitud, d.latitud, d.longitud, 60);
+
+      // Línea de ruta
+      trazas.push({
+        type: 'scattermapbox',
+        lat: gc.lats, lon: gc.lons,
+        mode: 'lines',
+        line: { width: 2, color },
+        hoverinfo: 'none',
+        showlegend: false,
+      });
+
+      // Marcadores
+      trazas.push({
+        type: 'scattermapbox',
+        lat: [o.latitud, d.latitud],
+        lon: [o.longitud, d.longitud],
+        mode: 'markers',
+        marker: { size: 10, color: [color, color] },
+        hovertext: [
+          `<b>${o.iata}</b> ${o.ciudad}<br>Salida: ${salida.toLocaleDateString('es-CO')}`,
+          `<b>${d.iata}</b> ${d.ciudad}<br>Llegada: ${new Date(it.fecha_hora_llegada).toLocaleDateString('es-CO')}`,
+        ],
+        hoverinfo: 'text',
+        showlegend: false,
+        hoverlabel: { bgcolor: '#1E2130', bordercolor: '#374151', font: { color: '#F9FAFB', size: 12 } },
+      });
+    });
+
+    // Centro del mapa en el promedio de todos los puntos
+    const allLats = conCoords.flatMap(it => [it.aeropuerto_origen.latitud,  it.aeropuerto_destino.latitud]);
+    const allLons = conCoords.flatMap(it => [it.aeropuerto_origen.longitud, it.aeropuerto_destino.longitud]);
+    const cLat = allLats.reduce((a, b) => a + b, 0) / allLats.length;
+    const cLon = allLons.reduce((a, b) => a + b, 0) / allLons.length;
+
+    Plotly.newPlot('mapaGeneral', trazas, {
+      mapbox: {
+        style: 'open-street-map',
+        center: { lat: cLat, lon: cLon },
+        zoom: conCoords.length === 1 ? 5 : 2,
+      },
+      paper_bgcolor: 'rgba(0,0,0,0)',
+      margin: { t: 0, b: 0, l: 0, r: 0 },
+      showlegend: false,
+    }, { responsive: true, displayModeBar: false });
+  }
+
+  cargar();
+</script>
+{% endblock %}

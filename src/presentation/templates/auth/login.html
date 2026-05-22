@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Iniciar Sesión — Extraditables.com{% endblock %}
+
+{% block content %}
+<div class="auth-wrapper">
+  <div class="auth-card card fade-in">
+    <div class="auth-logo">
+      <h1><span style="color:#ef4444">Extra</span><span style="color:#ffffff">ditables.com</span></h1>
+      <p>Planifica tus viajes con inteligencia</p>
+    </div>
+
+    <div id="alert" class="alert alert-error"></div>
+
+    <form id="loginForm" novalidate>
+      <div class="form-group">
+        <label for="correo">Correo electrónico</label>
+        <input type="email" id="correo" placeholder="tu@correo.com" autocomplete="email" required />
+        <span class="error-msg" id="correo-err">Ingresa un correo válido.</span>
+      </div>
+
+      <div class="form-group">
+        <label for="contrasena">Contraseña</label>
+        <input type="password" id="contrasena" placeholder="••••••••" autocomplete="current-password" required />
+        <span class="error-msg" id="contrasena-err">La contraseña es requerida.</span>
+      </div>
+
+      <div class="form-group" style="display:flex;align-items:center;gap:0.5rem;">
+        <input type="checkbox" id="recordar" style="width:auto;" />
+        <label for="recordar" style="margin:0;cursor:pointer;">Recordar sesión (30 días)</label>
+      </div>
+
+      <button type="submit" class="btn btn-primary" style="width:100%;justify-content:center;" id="submitBtn">
+        Iniciar Sesión
+      </button>
+    </form>
+
+    <div class="auth-footer">
+      ¿No tienes cuenta? <a href="/register">Regístrate</a> ·
+      <a href="#" id="recoverLink">¿Olvidaste tu contraseña?</a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  if (localStorage.getItem('access_token')) window.location.href = '/itinerarios';
+
+  const form = document.getElementById('loginForm');
+  const alert = document.getElementById('alert');
+  const submitBtn = document.getElementById('submitBtn');
+
+  function showAlert(msg) {
+    alert.textContent = msg;
+    alert.classList.add('visible');
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const correo = document.getElementById('correo').value.trim();
+    const contrasena = document.getElementById('contrasena').value;
+    const recordar = document.getElementById('recordar').checked;
+
+    let valid = true;
+    if (!correo || !correo.includes('@')) {
+      document.getElementById('correo-err').classList.add('visible');
+      document.getElementById('correo').classList.add('error');
+      valid = false;
+    } else {
+      document.getElementById('correo-err').classList.remove('visible');
+      document.getElementById('correo').classList.remove('error');
+    }
+    if (!contrasena) {
+      document.getElementById('contrasena-err').classList.add('visible');
+      document.getElementById('contrasena').classList.add('error');
+      valid = false;
+    } else {
+      document.getElementById('contrasena-err').classList.remove('visible');
+      document.getElementById('contrasena').classList.remove('error');
+    }
+    if (!valid) return;
+
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Ingresando...';
+    alert.classList.remove('visible');
+
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correo, contrasena, recordar }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setToken(data.access_token, data.refresh_token);
+        localStorage.setItem('usuario', JSON.stringify(data.usuario));
+        window.location.href = '/itinerarios';
+      } else {
+        showAlert(data.error || 'Error al iniciar sesión.');
+      }
+    } catch {
+      showAlert('Error de conexión. Verifica tu red.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = 'Iniciar Sesión';
+    }
+  });
+
+  document.getElementById('recoverLink').addEventListener('click', async (e) => {
+    e.preventDefault();
+    const correo = document.getElementById('correo').value.trim();
+    if (!correo) { showAlert('Ingresa tu correo primero.'); return; }
+    const res = await fetch('/auth/recuperar-contrasena', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ correo }),
+    });
+    const data = await res.json();
+    alert.className = 'alert alert-success visible';
+    alert.textContent = data.mensaje;
+  });
+</script>
+{% endblock %}

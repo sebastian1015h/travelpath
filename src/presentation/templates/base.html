@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}TravelPath{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/main.css') }}" />
+  {% block head %}{% endblock %}
+</head>
+<body>
+  {% block navbar %}{% endblock %}
+  {% block content %}{% endblock %}
+
+  <!-- Modal de confirmación global -->
+  <div class="modal-overlay" id="globalModal">
+    <div class="modal-box">
+      <div class="modal-icon" id="modalIcon">🗑️</div>
+      <div class="modal-title" id="modalTitle">¿Eliminar itinerario?</div>
+      <div class="modal-body"  id="modalBody">Esta acción no se puede deshacer.</div>
+      <div class="modal-actions">
+        <button class="btn btn-ghost" id="modalCancel">Cancelar</button>
+        <button class="btn btn-danger" id="modalConfirm">Eliminar</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = '';
+
+    function getToken() { return localStorage.getItem('access_token'); }
+
+    function setToken(token, refresh) {
+      localStorage.setItem('access_token', token);
+      if (refresh) localStorage.setItem('refresh_token', refresh);
+    }
+
+    function clearAuth() {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+      localStorage.removeItem('usuario');
+    }
+
+    function requireAuth() {
+      if (!getToken()) window.location.href = '/login';
+    }
+
+    async function apiFetch(url, options = {}) {
+      const token = getToken();
+      const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+      if (token) headers['Authorization'] = `Bearer ${token}`;
+      const res = await fetch(API_BASE + url, { ...options, headers });
+      if (res.status === 401) { clearAuth(); window.location.href = '/login'; }
+      return res;
+    }
+
+    // ── Modal global ──────────────────────────────────────────────────────
+    const _modal = document.getElementById('globalModal');
+
+    function showModal({ title, body, confirmText = 'Eliminar', icon = '🗑️', onConfirm }) {
+      document.getElementById('modalTitle').textContent   = title;
+      document.getElementById('modalBody').textContent    = body;
+      document.getElementById('modalConfirm').textContent = confirmText;
+      document.getElementById('modalIcon').textContent    = icon;
+      _modal.classList.add('visible');
+
+      const close = () => _modal.classList.remove('visible');
+
+      document.getElementById('modalCancel').onclick  = close;
+      _modal.addEventListener('click', e => { if (e.target === _modal) close(); }, { once: true });
+
+      document.getElementById('modalConfirm').onclick = () => {
+        close();
+        if (onConfirm) onConfirm();
+      };
+    }
+  </script>
+
+  {% block scripts %}{% endblock %}
+
+  <!-- ── Monitor educativo de errores HTTP ─────────────────────────────── -->
+  <style>
+    .http-monitor-btn {
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9000;
+      display: none; align-items: center; gap: 0.4rem;
+      padding: 0.5rem 1rem; border-radius: 999px; border: none;
+      background: #1e293b; color: #f8fafc; font-size: 0.82rem;
+      font-weight: 700; cursor: pointer; box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+      transition: transform 0.15s;
+    }
+    .http-monitor-btn:hover { transform: scale(1.05); }
+    .http-monitor-btn.code-4xx { border: 2px solid #f97316; color: #f97316; }
+    .http-monitor-btn.code-5xx { border: 2px solid #ef4444; color: #ef4444; }
+    .http-monitor-btn.code-net { border: 2px solid #94a3b8; color: #94a3b8; }
+
+    .http-monitor-panel {
+      position: fixed; bottom: 0; right: 0; z-index: 9001;
+      width: min(480px, 100vw);
+      background: #0f172a; border-top: 1px solid #1e293b;
+      border-left: 1px solid #1e293b; border-radius: 12px 0 0 0;
+      box-shadow: -4px -4px 30px rgba(0,0,0,0.5);
+      transform: translateY(100%); transition: transform 0.3s ease;
+      max-height: 80vh; display: flex; flex-direction: column;
+    }
+    .http-monitor-panel.open { transform: translateY(0); }
+
+    .hmp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.75rem 1.25rem; border-bottom: 1px solid #1e293b;
+      font-size: 0.8rem; font-weight: 700; color: #94a3b8; flex-shrink: 0;
+    }
+    .hmp-header button {
+      background: none; border: none; color: #94a3b8;
+      font-size: 1rem; cursor: pointer; padding: 0.25rem 0.5rem;
+    }
+    .hmp-body {
+      overflow-y: auto; padding: 1.25rem; display: flex; flex-direction: column; gap: 1rem;
+    }
+    .hmp-code-row {
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .hmp-code-num {
+      font-size: 3rem; font-weight: 900; line-height: 1;
+      font-family: monospace;
+    }
+    .hmp-code-num.c4xx { color: #f97316; }
+    .hmp-code-num.c5xx { color: #ef4444; }
+    .hmp-code-num.cnet { color: #94a3b8; }
+    .hmp-code-name { font-size: 1rem; font-weight: 700; color: #f1f5f9; }
+    .hmp-section { display: flex; flex-direction: column; gap: 0.3rem; }
+    .hmp-section-title {
+      font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+      letter-spacing: 0.05em; color: #64748b;
+    }
+    .hmp-section-body {
+      font-size: 0.85rem; color: #cbd5e1; line-height: 1.5;
+    }
+    .hmp-code-block {
+      font-family: monospace; font-size: 0.8rem; background: #1e293b;
+      padding: 0.5rem 0.75rem; border-radius: 6px; color: #7dd3fc;
+      word-break: break-all;
+    }
+    .hmp-divider { border: none; border-top: 1px solid #1e293b; margin: 0; }
+    .hmp-history {
+      display: flex; flex-direction: column; gap: 0.4rem;
+    }
+    .hmp-history-item {
+      display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;
+      color: #64748b; cursor: pointer; padding: 0.25rem 0.5rem;
+      border-radius: 6px; transition: background 0.15s;
+    }
+    .hmp-history-item:hover { background: #1e293b; color: #cbd5e1; }
+    .hmp-history-badge {
+      font-family: monospace; font-weight: 700; font-size: 0.72rem;
+      padding: 0.1rem 0.4rem; border-radius: 4px;
+    }
+    .hmp-history-badge.c4xx { background: rgba(249,115,22,0.15); color: #f97316; }
+    .hmp-history-badge.c5xx { background: rgba(239,68,68,0.15); color: #ef4444; }
+    .hmp-history-badge.cnet { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  </style>
+
+  <!-- Botón flotante -->
+  <button class="http-monitor-btn" id="httpMonitorBtn" onclick="httpMonitor.toggle()">
+    <span id="httpMonitorIcon">⚠</span>
+    <span id="httpMonitorLabel">Ver error HTTP</span>
+  </button>
+
+  <!-- Panel deslizable -->
+  <div class="http-monitor-panel" id="httpMonitorPanel">
+    <div class="hmp-header">
+      <span>📚 Monitor de errores HTTP — modo educativo</span>
+      <button onclick="httpMonitor.toggle()">✕</button>
+    </div>
+    <div class="hmp-body">
+      <div class="hmp-code-row">
+        <div class="hmp-code-num" id="hmpCodeNum">—</div>
+        <div>
+          <div class="hmp-code-name" id="hmpCodeName"></div>
+        </div>
+      </div>
+      <hr class="hmp-divider">
+      <div class="hmp-section">
+        <div class="hmp-section-title">❓ ¿Qué significa este código?</div>
+        <div class="hmp-section-body" id="hmpDesc"></div>
+      </div>
+      <div class="hmp-section">
+        <div class="hmp-section-title">📌 ¿Cuándo ocurre en esta app?</div>
+        <div class="hmp-section-body" id="hmpExample"></div>
+      </div>
+      <div class="hmp-section">
+        <div class="hmp-section-title">📩 Mensaje del servidor</div>
+        <div class="hmp-code-block" id="hmpMsg">—</div>
+      </div>
+      <div class="hmp-section">
+        <div class="hmp-section-title">🔗 Endpoint que falló</div>
+        <div class="hmp-code-block" id="hmpEndpoint">—</div>
+      </div>
+      <hr class="hmp-divider">
+      <div class="hmp-section">
+        <div class="hmp-section-title">🕐 Historial de errores (sesión)</div>
+        <div class="hmp-history" id="hmpHistory"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+  const _HTTP_CODES = {
+    0: {
+      name: "Error de red",
+      desc: "No se pudo establecer conexión con el servidor. El servidor podría estar apagado o tu internet falló.",
+      example: "Render apagó el servidor por inactividad (free tier duerme tras 15 min). Espera unos segundos y recarga.",
+      cls: "cnet",
+    },
+    400: {
+      name: "400 Bad Request",
+      desc: "La solicitud llegó malformada — campos faltantes, tipos incorrectos o JSON inválido.",
+      example: "Enviar el formulario sin seleccionar un aeropuerto de origen.",
+      cls: "c4xx",
+    },
+    401: {
+      name: "401 Unauthorized",
+      desc: "No estás autenticado o tu token de sesión expiró. El servidor no sabe quién eres.",
+      example: "Tu sesión lleva más de 24 h activa y el token venció. Cierra sesión y vuelve a entrar.",
+      cls: "c4xx",
+    },
+    403: {
+      name: "403 Forbidden",
+      desc: "Estás autenticado pero no tienes permiso para esta acción específica.",
+      example: "Intentar editar un itinerario que ya salió (es pasado) o que pertenece a otro usuario.",
+      cls: "c4xx",
+    },
+    404: {
+      name: "404 Not Found",
+      desc: "El recurso solicitado no existe en el servidor.",
+      example: "Buscar el código IATA 'ZZZ' que ningún aeropuerto tiene, o un itinerario que fue eliminado.",
+      cls: "c4xx",
+    },
+    409: {
+      name: "409 Conflict",
+      desc: "La operación choca con datos que ya existen.",
+      example: "Crear un viaje BOG→JFK del 20 jun 10h al 20 jun 18h, cuando ya tienes uno del 20 jun 14h al 21 jun.",
+      cls: "c4xx",
+    },
+    422: {
+      name: "422 Unprocessable Entity",
+      desc: "Los datos tienen formato correcto pero violan reglas de negocio.",
+      example: "Fecha de llegada anterior a la de salida, o salida más de 10 minutos en el pasado.",
+      cls: "c4xx",
+    },
+    500: {
+      name: "500 Internal Server Error",
+      desc: "El servidor explotó internamente — bug en el código, fallo de base de datos o excepción no capturada.",
+      example: "La conexión con Neon se cortó al guardar, o hay un error en el código del servidor.",
+      cls: "c5xx",
+    },
+  };
+
+  const httpMonitor = (() => {
+    const history = [];
+    let current = null;
+
+    function _cls(code) {
+      if (code === 0) return "cnet";
+      if (code >= 500) return "c5xx";
+      return "c4xx";
+    }
+
+    function _btnCls(code) {
+      if (code === 0) return "code-net";
+      if (code >= 500) return "code-5xx";
+      return "code-4xx";
+    }
+
+    function _info(code) {
+      return _HTTP_CODES[code] || {
+        name: `${code} Error`,
+        desc: "Código HTTP no documentado en este monitor.",
+        example: "Consulta la documentación MDN para más detalles.",
+        cls: _cls(code),
+      };
+    }
+
+    function register(code, message, endpoint) {
+      current = { code, message, endpoint, info: _info(code), ts: new Date() };
+      history.unshift(current);
+      if (history.length > 10) history.pop();
+      _showBtn();
+      _renderCurrent();
+      _renderHistory();
+    }
+
+    function _showBtn() {
+      const btn = document.getElementById('httpMonitorBtn');
+      btn.style.display = 'flex';
+      btn.className = `http-monitor-btn ${_btnCls(current.code)}`;
+      document.getElementById('httpMonitorLabel').textContent = `Error ${current.code || 'de red'}`;
+    }
+
+    function _renderCurrent() {
+      if (!current) return;
+      const { code, message, endpoint, info } = current;
+      const cls = info.cls;
+      document.getElementById('hmpCodeNum').textContent = code || 'NET';
+      document.getElementById('hmpCodeNum').className = `hmp-code-num ${cls}`;
+      document.getElementById('hmpCodeName').textContent = info.name;
+      document.getElementById('hmpDesc').textContent = info.desc;
+      document.getElementById('hmpExample').textContent = info.example;
+      document.getElementById('hmpMsg').textContent = message || '(sin mensaje)';
+      document.getElementById('hmpEndpoint').textContent = endpoint || '(desconocido)';
+    }
+
+    function _renderHistory() {
+      const el = document.getElementById('hmpHistory');
+      if (!history.length) { el.innerHTML = '<span style="color:#475569;font-size:0.78rem">Sin errores aún.</span>'; return; }
+      el.innerHTML = history.map((e, i) => {
+        const t = e.ts.toLocaleTimeString('es-CO', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        return `<div class="hmp-history-item" onclick="httpMonitor.loadHistory(${i})">
+          <span class="hmp-history-badge ${e.info.cls}">${e.code || 'NET'}</span>
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${e.endpoint}</span>
+          <span style="flex-shrink:0">${t}</span>
+        </div>`;
+      }).join('');
+    }
+
+    function loadHistory(i) {
+      current = history[i];
+      _renderCurrent();
+    }
+
+    function toggle() {
+      const panel = document.getElementById('httpMonitorPanel');
+      panel.classList.toggle('open');
+      if (panel.classList.contains('open')) {
+        _renderCurrent();
+        _renderHistory();
+      }
+    }
+
+    return { register, toggle, loadHistory };
+  })();
+
+  // ── Parchar apiFetch para capturar errores automáticamente ───────────────
+  const _apiFetchOriginal = apiFetch;
+  apiFetch = async function(url, options = {}) {
+    try {
+      const res = await _apiFetchOriginal(url, options);
+      if (!res.ok) {
+        const clone = res.clone();
+        clone.json().then(data => {
+          httpMonitor.register(
+            res.status,
+            data.error || data.message || JSON.stringify(data),
+            `${options.method || 'GET'} ${url}`
+          );
+        }).catch(() => {
+          httpMonitor.register(res.status, `HTTP ${res.status}`, `${options.method || 'GET'} ${url}`);
+        });
+      }
+      return res;
+    } catch (err) {
+      httpMonitor.register(0, err.message || 'Error de red', `${options.method || 'GET'} ${url}`);
+      throw err;
+    }
+  };
+  </script>
+</body>
+</html>
