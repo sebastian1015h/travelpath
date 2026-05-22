@@ -1,5 +1,9 @@
 # ── Core ─────────────────────────────────────────────────────
 flask==3.1.0
+<<<<<<< HEAD
+=======
+flasgger==0.9.7.1
+>>>>>>> origin/master
 flask-cors==5.0.0
 sqlalchemy==2.0.36
 pydantic==2.11.4

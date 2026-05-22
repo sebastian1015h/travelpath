@@ -1,6 +1,10 @@
 from flask import Flask
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager
+<<<<<<< HEAD
+=======
+from flasgger import Swagger
+>>>>>>> origin/master
 
 from src.infrastructure.config.settings import settings
 from src.infrastructure.config.database import get_db_session, init_db, remove_db_session
@@ -8,7 +12,11 @@ from src.infrastructure.security.jwt_handler import init_jwt
 
 from src.infrastructure.adapters.output.persistence.sqlalchemy_usuario_repo import SQLAlchemyUsuarioRepo
 from src.infrastructure.adapters.output.persistence.sqlalchemy_itinerario_repo import SQLAlchemyItinerarioRepo
+<<<<<<< HEAD
 from src.infrastructure.adapters.output.external.api_colombia_adapter import ApiColombiaAdapter
+=======
+from src.infrastructure.adapters.output.external.airport_service_http_adapter import AirportServiceHttpAdapter
+>>>>>>> origin/master
 
 from src.application.services.auth_service import AuthService
 from src.application.services.itinerario_service import ItinerarioService
@@ -30,6 +38,32 @@ def create_app() -> Flask:
     app.config["SECRET_KEY"]     = settings.jwt_secret_key
     app.config["DEBUG"]          = settings.flask_debug
 
+<<<<<<< HEAD
+=======
+    Swagger(app, template={
+        "info": {
+            "title": "Itinerary Service API",
+            "description": (
+                "Microservicio de gestión de itinerarios de viaje. "
+                "Maneja autenticación JWT, CRUD de itinerarios y consulta "
+                "de aeropuertos delegando al Airport Service."
+            ),
+            "version": "1.0.0",
+            "contact": {"name": "TravelPath Team"},
+        },
+        "host": "localhost:5000",
+        "basePath": "/",
+        "securityDefinitions": {
+            "Bearer": {
+                "type": "apiKey",
+                "name": "Authorization",
+                "in": "header",
+                "description": "JWT token. Formato: Bearer <token>",
+            }
+        },
+    })
+
+>>>>>>> origin/master
     origins = settings.frontend_origin
     CORS(app, resources={r"/api/*": {"origins": origins}, r"/auth/*": {"origins": origins}})
 
@@ -61,7 +95,11 @@ def create_app() -> Flask:
 
     usuario_repo    = SQLAlchemyUsuarioRepo(db_session)
     itinerario_repo = SQLAlchemyItinerarioRepo(db_session)
+<<<<<<< HEAD
     aeropuerto_client = ApiColombiaAdapter()
+=======
+    aeropuerto_client = AirportServiceHttpAdapter(settings.airport_service_url)
+>>>>>>> origin/master
 
     auth_service       = AuthService(usuario_repo, token_blacklist)
     itinerario_service = ItinerarioService(itinerario_repo, aeropuerto_client)

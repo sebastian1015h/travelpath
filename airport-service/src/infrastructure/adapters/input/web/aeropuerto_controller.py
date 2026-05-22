@@ -1,29 +1,25 @@
 from flask import Blueprint, request, jsonify
-from flask_jwt_extended import jwt_required
 
-from src.domain.ports.output.aeropuerto_client_port import AeropuertoClientPort
+from src.application.services.aeropuerto_service import AeropuertoService
 
 
-def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blueprint:
-    aeropuerto_bp = Blueprint("aeropuertos", __name__, url_prefix="/api/aeropuertos")
+def create_aeropuerto_blueprint(service: AeropuertoService) -> Blueprint:
+    bp = Blueprint("aeropuertos", __name__, url_prefix="/aeropuertos")
 
-    @aeropuerto_bp.get("")
-    @jwt_required()
+    @bp.get("")
     def buscar_por_nombre():
         """
-        Busca aeropuertos por nombre, ciudad o código IATA (proxy al Airport Service).
+        Busca aeropuertos por nombre, ciudad o código IATA.
         ---
         tags:
           - Aeropuertos
-        security:
-          - Bearer: []
         parameters:
           - name: nombre
             in: query
             type: string
             required: true
             description: Nombre del aeropuerto, ciudad o código IATA (mínimo 2 caracteres)
-            example: Medellín
+            example: Bogotá
         responses:
           200:
             description: Lista de aeropuertos encontrados
@@ -35,12 +31,8 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
             description: Parámetro de búsqueda inválido
             schema:
               $ref: '#/definitions/Error'
-          401:
-            description: Token inválido o no proporcionado
-            schema:
-              $ref: '#/definitions/Error'
           503:
-            description: No se pudo conectar con el Airport Service
+            description: No se pudo conectar con la API externa
             schema:
               $ref: '#/definitions/Error'
         definitions:
@@ -49,22 +41,22 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
             properties:
               iata:
                 type: string
-                example: MDE
+                example: BOG
               nombre:
                 type: string
-                example: José María Córdova International Airport
+                example: El Dorado International Airport
               ciudad:
                 type: string
-                example: Medellín
+                example: Bogotá
               pais:
                 type: string
                 example: Colombia
               latitud:
                 type: number
-                example: 6.1645
+                example: 4.7016
               longitud:
                 type: number
-                example: -75.4231
+                example: -74.1469
           Error:
             type: object
             properties:
@@ -76,21 +68,18 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
         if not nombre or len(nombre) < 2:
             return jsonify({"error": "Ingresa al menos 2 caracteres."}), 400
         try:
-            resultados = aeropuerto_client.buscar_por_nombre(nombre)
+            resultados = service.buscar_por_nombre(nombre)
         except Exception:
-            return jsonify({"error": "No se pudo conectar con el servicio de aeropuertos."}), 503
+            return jsonify({"error": "No se pudo conectar con la API de aeropuertos."}), 503
         return jsonify([r.to_dict() for r in resultados[:12]]), 200
 
-    @aeropuerto_bp.get("/mapa")
-    @jwt_required()
+    @bp.get("/mapa")
     def datos_mapa():
         """
-        Retorna todos los aeropuertos para renderizar el mapa Plotly (proxy al Airport Service).
+        Retorna todos los aeropuertos disponibles para renderizar en el mapa Plotly.
         ---
         tags:
           - Aeropuertos
-        security:
-          - Bearer: []
         responses:
           200:
             description: Lista completa de aeropuertos con coordenadas
@@ -98,31 +87,24 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
               type: array
               items:
                 $ref: '#/definitions/Aeropuerto'
-          401:
-            description: Token inválido o no proporcionado
-            schema:
-              $ref: '#/definitions/Error'
           503:
-            description: No se pudo conectar con el Airport Service
+            description: Error al obtener datos del mapa
             schema:
               $ref: '#/definitions/Error'
         """
         try:
-            aeropuertos = aeropuerto_client.listar_aeropuertos()
+            aeropuertos = service.listar_para_mapa()
+            return jsonify([a.to_dict() for a in aeropuertos]), 200
         except Exception:
-            return jsonify({"error": "No se pudo conectar con el servicio de aeropuertos."}), 503
-        return jsonify([a.to_dict() for a in aeropuertos]), 200
+            return jsonify({"error": "Error al obtener datos para el mapa."}), 503
 
-    @aeropuerto_bp.get("/<string:iata>")
-    @jwt_required()
+    @bp.get("/<string:iata>")
     def buscar_por_iata(iata: str):
         """
-        Busca un aeropuerto por su código IATA (proxy al Airport Service).
+        Busca un aeropuerto por su código IATA.
         ---
         tags:
           - Aeropuertos
-        security:
-          - Bearer: []
         parameters:
           - name: iata
             in: path
@@ -136,11 +118,7 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
             schema:
               $ref: '#/definitions/Aeropuerto'
           400:
-            description: Código IATA inválido
-            schema:
-              $ref: '#/definitions/Error'
-          401:
-            description: Token inválido o no proporcionado
+            description: Código IATA inválido (debe tener 3 letras)
             schema:
               $ref: '#/definitions/Error'
           404:
@@ -150,9 +128,9 @@ def create_aeropuerto_blueprint(aeropuerto_client: AeropuertoClientPort) -> Blue
         """
         if len(iata) != 3:
             return jsonify({"error": "El código IATA debe tener exactamente 3 letras."}), 400
-        resultado = aeropuerto_client.buscar_por_iata(iata.upper())
+        resultado = service.buscar_por_iata(iata.upper())
         if resultado:
             return jsonify(resultado.to_dict()), 200
         return jsonify({"error": f"Aeropuerto '{iata.upper()}' no encontrado."}), 404
 
-    return aeropuerto_bp
+    return bp
